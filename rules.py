@@ -39,9 +39,10 @@ _MASTER_SHEET_COLUMNS = [
     'FU quantity',
     'FU unit',
     'Market_share',
-    'Total Output',
-    'Parent',
-    'Empty',
+    'Total output',
+    f'Parent {MI["a"]}',
+    f'Parent {MI["r"]}',
+    'Leave empty',
     'Reference'
     ]
 

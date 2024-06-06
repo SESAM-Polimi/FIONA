@@ -3,7 +3,7 @@ import mario
 
 from interactions.excel.exporters import get_fiona_master_template,get_fiona_inventory_templates
 from interactions.excel.readers import read_fiona_master_template,read_fiona_inventory_templates
-from interactions.mario.add_inventories import add_inventories_from_master_template
+from interactions.mario.add_inventories import inventories_adder
 from mario.tools.constants import _MASTER_INDEX as MI
 
 from rules import setup_logger
@@ -61,7 +61,7 @@ class DB_builder():
         get_inventories:bool = False,
     ):
         logger.info(f"{logmsg['r']} | Reading master template from {path}")
-        master_sheet, self.regions_maps_sheet = read_fiona_master_template(path,MS_name,RMS_name)
+        master_sheet, self.regions_maps = read_fiona_master_template(path,MS_name,RMS_name)
         if master_sheet.empty:
             raise ValueError("Master sheet is empty. Please fill it")
         self.master_sheet = master_sheet
@@ -80,7 +80,7 @@ class DB_builder():
             raise ValueError(f"Source {source} not in {_ACCEPTABLES}")
         
         logger.info(f"{logmsg['a']} | Erasing all scenarios but {scenario}")
-        
+
         matrices = {
             'z': self.sut.get_data(matrices=['z'],scenarios=[scenario])[scenario][0],
             'e': self.sut.get_data(matrices=['e'],scenarios=[scenario])[scenario][0],
@@ -92,9 +92,7 @@ class DB_builder():
             if not hasattr(self, 'inventories'):
                 raise AttributeError("Inventories not parsed yet. Use read_inventories() first")
 
-            if self.new_commodities != []:
-                matrices,units = add_inventories_from_master_template(self,matrices,MI['c'])                    
-            matrices,units = add_inventories_from_master_template(self,matrices,MI['a'])
+            # matrices,units = add_inventories_from_master_template(self,matrices)                    
 
         if source == 'FIONA':
             raise NotImplementedError("FIONA inventories not implemented yet")
@@ -116,7 +114,7 @@ class DB_builder():
         # listing activities that have a parent
         parented_activities = []
         for act in self.new_activities:
-            parent = self.master_sheet.query(f'{MI["a"]} == "{act}"')['Parent'].values[0]
+            parent = self.master_sheet.query(f'{MI["a"]} == "{act}"')['Parent activity'].values[0]
             if isinstance(parent, str):
                 parented_activities.append(act)
         
