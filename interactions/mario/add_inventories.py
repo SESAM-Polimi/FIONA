@@ -41,7 +41,7 @@ def add_inventories_from_master_template(
     for item in [MI['c'],MI['a']]:
         new_z_cols = pd.DataFrame(0,index=matrices['z'].index,columns=new_indices[item])
         new_e_cols = pd.DataFrame(0,index=matrices['e'].index,columns=new_indices[item])
-        new_v_cols = pd.DataFrame(0,index=matrices['v'].index,columns=new_indices[item]
+        new_v_cols = pd.DataFrame(0,index=matrices['v'].index,columns=new_indices[item])
 
         
 
