@@ -3,7 +3,7 @@ import mario
 
 from interactions.excel.exporters import get_fiona_master_template,get_fiona_inventory_templates
 from interactions.excel.readers import read_fiona_master_template,read_fiona_inventory_templates
-from interactions.mario.add_inventories import inventories_adder
+from interactions.mario.add_inventories import Inventories
 from mario.tools.constants import _MASTER_INDEX as MI
 
 from rules import setup_logger
@@ -28,6 +28,19 @@ class DB_builder():
         sut_format:str = 'txt',
         read_master_file:bool = False,
     ):
+        """
+        Initialize the DB uilder object.
+
+        Args:
+            sut_path (str): The path to the SUT file.
+            sut_mode (str): The mode of the SUT.
+            master_file_path (str): The path to the master file.
+            sut_format (str, optional): The format of the SUT file. Defaults to 'txt'.
+            read_master_file (bool, optional): Whether to read the master file. Defaults to False.
+
+        Raises:
+            ValueError: If the sut_mode or sut_format is not acceptable.
+        """
         if sut_mode not in _ACCEPTABLES['sut_modes']:
             raise ValueError(f"Mode {sut_mode} not in {_ACCEPTABLES}")
         if sut_format not in _ACCEPTABLES['sut_formats']:
@@ -38,20 +51,29 @@ class DB_builder():
             self.sut = mario.parse_from_txt(path=sut_path,table='SUT',mode=sut_mode,)
         if sut_format == 'xlsx':
             self.sut = mario.parse_from_excel(path=sut_path,table='SUT',mode=sut_mode,)
-        
+
         if not read_master_file:
             self.get_master_template(path=master_file_path)
         else:
             self.read_master_template(path=master_file_path)
-        
+
         if sut_mode=='flows':
-            logger.info(f"{logmsg['dm']} | Resetting SUT to coefficients")
+            logger.info(f"{logmsg['dm']} | Resetting SUT to coefficients")  # MAYBE BETTER ADDING THE COEFFICIENTS INSTEAD OF DELETING THE FLOWS
             self.sut.reset_to_coefficients(self.sut.scenarios[0])
         
     def get_master_template(
         self,
         path:str,
     ):
+        """
+        Generates a master template at the specified path.
+
+        Args:
+            path (str): The path where the master template will be generated.
+
+        Returns:
+            None
+        """
         logger.info(f"{logmsg['w']} | Generating master template in {path}")
         get_fiona_master_template(self,MS_name,MS_cols,RMS_name,RMS_cols,path)
 
@@ -60,6 +82,19 @@ class DB_builder():
         path:str,
         get_inventories:bool = False,
     ):
+        """
+        Reads the master template from the specified path and performs necessary operations.
+
+        Args:
+            path (str): The path to the master template file.
+            get_inventories (bool, optional): Flag indicating whether to get inventory templates. Defaults to False.
+
+        Raises:
+            ValueError: If the master sheet is empty.
+
+        Returns:
+            None
+        """
         logger.info(f"{logmsg['r']} | Reading master template from {path}")
         master_sheet, self.regions_maps = read_fiona_master_template(path,MS_name,RMS_name)
         if master_sheet.empty:
@@ -75,7 +110,21 @@ class DB_builder():
         source:str,
         scenario:str = 'baseline',
     ):        
-        
+        """
+        Adds inventories to the database.
+
+        Args:
+            source (str): The source of the inventories. Currently supports 'excel' and 'FIONA'.
+            scenario (str, optional): The scenario to add the inventories to. Defaults to 'baseline'.
+
+        Raises:
+            ValueError: If the source is not one of the acceptable inventory sources.
+            AttributeError: If the inventories have not been parsed yet. Use read_inventories() first.
+            NotImplementedError: If the source is 'FIONA' (not implemented yet).
+
+        Returns:
+            None
+        """
         if source not in _ACCEPTABLES['inventory_sources']:
             raise ValueError(f"Source {source} not in {_ACCEPTABLES}")
         
@@ -92,19 +141,37 @@ class DB_builder():
             if not hasattr(self, 'inventories'):
                 raise AttributeError("Inventories not parsed yet. Use read_inventories() first")
 
-            # matrices,units = add_inventories_from_master_template(self,matrices)                    
+            self.Inv_builder = Inventories(self,matrices)
+            self.Inv_builder.add_from_master()
+
+            new_matrices = {'baseline': self.Inv_builder.matrices}
+            new_units = self.Inv_builder.units
+            indices = self.Inv_builder.mario_indices
+        
+            # add to FIONA
 
         if source == 'FIONA':
             raise NotImplementedError("FIONA inventories not implemented yet")
 
-        matrices['EY'] = self.sut.get_data(matrices=['EY'],scenarios=[scenario])[scenario][0]
-    
-        # initialize new mario instance
-        self.sut = mario.Database(z=matrices['z'],e=matrices['e'],v=matrices['v'],Y=matrices['Y'],EY=matrices['EY'],units=units,table='SUT')       
+        new_matrices['baseline']['EY'] = self.sut.get_data(matrices=['EY'],scenarios=[scenario])[scenario][0]
 
-    def get_new_sets(
-            self,
-    ):
+        # initialize new mario instance
+        self.sut = mario.Database(
+            name=None,
+            table='SUT',
+            source=None,
+            year=None,
+            init_by_parsers={"matrices": new_matrices, "_indeces": indices, "units": new_units},
+            calc_all=False,
+            )
+
+    def get_new_sets(self):
+        """
+        Retrieves new sets of activities and commodities from the master sheet.
+
+        Returns:
+            None
+        """
         self.new_activities = self.master_sheet[MI['a']].unique()
         new_commodities = self.master_sheet[MI['c']].unique()
 
@@ -114,7 +181,7 @@ class DB_builder():
         # listing activities that have a parent
         parented_activities = []
         for act in self.new_activities:
-            parent = self.master_sheet.query(f'{MI["a"]} == "{act}"')['Parent activity'].values[0]
+            parent = self.master_sheet.query(f'{MI["a"]} == "{act}"')[f'Parent {MI["a"]}'].values[0]
             if isinstance(parent, str):
                 parented_activities.append(act)
         
@@ -133,21 +200,32 @@ class DB_builder():
         path:str,
         overwrite:bool=True,
     ):
+        """
+        Retrieves inventory templates from the master sheet and saves them to the specified path.
+
+        Args:
+            path (str): The path where the inventory templates will be saved.
+            overwrite (bool, optional): Specifies whether to overwrite existing templates. Defaults to True.
+        """
         new_sheets = self.master_sheet['Sheet name'].unique()
-        get_fiona_inventory_templates(new_sheets,InvS_cols,overwrite,path)    
+        get_fiona_inventory_templates(new_sheets, InvS_cols, overwrite, path)
 
-    def read_inventories(
-        self,
-        path:str,
-    ):
-        self.inventories = read_fiona_inventory_templates(self,path)
+    def read_inventories(self, path: str):
+        """
+        Reads inventory templates from the specified path and stores them in the 'inventories' attribute.
 
+        Args:
+            path (str): The path to the inventory templates.
+
+        Returns:
+            None
+        """
+        self.inventories = read_fiona_inventory_templates(self, path)
 
 #%%
 if __name__ == '__main__':
-    # sut_path = 'tests/test_SUT.xlsx'
     sut_path = 'tests/test_SUT.xlsx'
-    sut_mode = 'flows'
+    sut_mode = 'coefficients'
     master_file_path = 'tests/master.xlsx'
 
     db = DB_builder(
@@ -159,10 +237,15 @@ if __name__ == '__main__':
     )
 
 #%%
-db.read_master_template(path=master_file_path,get_inventories=True)
+# db.read_master_template(path=master_file_path)
+
+#%%
+# db.get_inventory_templates(path=master_file_path)
 
 #%%
 db.read_inventories(path=master_file_path)
 
 #%%
-db.add_empty_inventories()
+db.add_inventories(source='excel')
+
+# %%

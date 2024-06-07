@@ -5,7 +5,7 @@ def read_fiona_master_template(path,master_name,reg_map_name):
     
     master_file = pd.read_excel(path,sheet_name=None,header=0,)
     master_sheet = master_file[master_name]
-    regions_maps = {k:master_file[reg_map_name].dropna().to_list() for k in master_file[reg_map_name].columns}
+    regions_maps = {k:master_file[reg_map_name][k].dropna().to_list() for k in master_file[reg_map_name].columns}
 
     return master_sheet, regions_maps
 
