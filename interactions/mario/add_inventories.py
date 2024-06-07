@@ -211,16 +211,10 @@ class Inventories:
         if activity in self.parented_activities: # if the activity must be structured based on a parent activity, possibly in another region
             parent_activity = self.builder.master_sheet.query(f"{MI['a']}==@activity")[f'Parent {MI["a"]}'].values[0]
 
-            parent_region = self.builder.master_sheet.query(f"{MI['a']}==@activity")[f'Parent {MI["r"]}'].values[0]
-            if parent_region not in self.builder.sut.get_index(MI['r']):
-                raise ValueError(f"Parent region {parent_region} of {activity} is not in the SUT. For now it is necessary to add indicate an existing region in the SUT")
-            # if parent_region == '': # check if parent region is empty
-            #     parent_region = region # if it is, then the parent region is the same assumed to be the target region
-
             for region in target_regions: # the same activity can be added in multiple regions...
-                self.slices[MI['a']]['z']['cols'].loc[(sn,MI['c'],sn),(region,MI['a'],activity)] = self.builder.sut.z.loc[(sn,MI['c'],sn),(parent_region,MI['a'],parent_activity)].values
-                self.slices[MI['a']]['v']['cols'].loc[(sn,MI['c'],sn),(region,MI['a'],activity)] = self.builder.sut.v.loc[(sn,MI['c'],sn),(parent_region,MI['a'],parent_activity)].values
-                self.slices[MI['a']]['e']['cols'].loc[(sn,MI['c'],sn),(region,MI['a'],activity)] = self.builder.sut.e.loc[(sn,MI['c'],sn),(parent_region,MI['a'],parent_activity)].values
+                self.slices[MI['a']]['z']['cols'].loc[(sn,MI['c'],sn),(region,MI['a'],activity)] = self.builder.sut.z.loc[(sn,MI['c'],sn),(region,MI['a'],parent_activity)].values
+                self.slices[MI['a']]['v']['cols'].loc[:,(region,MI['a'],activity)] = self.builder.sut.v.loc[:,(region,MI['a'],parent_activity)].values
+                self.slices[MI['a']]['e']['cols'].loc[:,(region,MI['a'],activity)] = self.builder.sut.e.loc[:,(region,MI['a'],parent_activity)].values
             
         inventory = self.make_units_consistent_to_database(inventory) 
 
@@ -301,19 +295,22 @@ class Inventories:
             region_from = inventory.loc[i,f"DB {MI['r']}"]
             input_item = inventory.loc[i,"DB Item"]
             quantity = inventory.loc[i,self.converted_quantity_column]
+            change_type = inventory.loc[i,'Type']
 
             if region_from in self.builder.sut.get_index(MI['r']):
-                self.slices[MI['a']]['z']['cols'].loc[(region_from,MI['c'],input_item),(region_to,MI['a'],activity)] = quantity
+                if change_type == 'Update':
+                    self.slices[MI['a']]['z']['cols'].loc[(region_from,MI['c'],input_item),(region_to,MI['a'],activity)] = quantity
             else:
-                com_use = self.builder.sut.u.loc[(self.builder.regions_maps[region_from],sn,input_item),(region_to,sn,sn)]
-                u_share = com_use.sum(1)/com_use.sum().sum()*quantity
-                if isinstance(u_share,pd.Series):
-                    u_share = u_share.to_frame()
-                u_share.columns = pd.MultiIndex.from_arrays([[region_to],[MI['a']],[activity]])
+                if change_type == 'Update':
+                    com_use = self.builder.sut.u.loc[(self.builder.regions_maps[region_from],sn,input_item),(region_to,sn,sn)]
+                    u_share = com_use.sum(1)/com_use.sum().sum()*quantity
+                    if isinstance(u_share,pd.Series):
+                        u_share = u_share.to_frame()
+                    u_share.columns = pd.MultiIndex.from_arrays([[region_to],[MI['a']],[activity]])
 
-                dummy_df = deepcopy(self.slices[MI['a']]['z']['cols'])
-                dummy_df.update(u_share)
-                self.slices[MI['a']]['z']['cols'].loc[:,(region_to,MI['a'],activity)] += dummy_df.loc[:,(region_to,MI['a'],activity)].values
+                    dummy_df = deepcopy(self.slices[MI['a']]['z']['cols'])
+                    dummy_df.update(u_share)
+                    self.slices[MI['a']]['z']['cols'].loc[:,(region_to,MI['a'],activity)] += dummy_df.loc[:,(region_to,MI['a'],activity)].values
 
     def fill_fact_sats_inputs(
         self,
@@ -401,13 +398,13 @@ class Inventories:
         - ValueError: If the 'Leave empty' column is not a boolean or left empty.
         """
         empty = self.builder.master_sheet.query(f"{MI['a']}==@activity")['Leave empty'].values[0]
-        if isinstance(empty, bool):
-            if empty:
+        if isinstance(empty, float):
+            if empty == 1:
                 return True
-            else:
+            if empty == 0:
                 return False
-        elif pd.isna(empty):
-            return False
+            if pd.isna(empty):
+                return False
         else:
             raise ValueError(f"'Leave empty' column for {activity} in the master file must be boolean or left empty, got {empty} instead")
 
