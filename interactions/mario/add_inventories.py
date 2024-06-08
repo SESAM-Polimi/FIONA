@@ -6,6 +6,14 @@ from mario.tools.constants import _MASTER_INDEX as MI
 
 sn = slice(None)
 
+_matrix_slices_map = {
+    'u':{MI['a']:[1],MI['c']:[0]},
+    's':{MI['a']:[0],MI['c']:[1]},
+    'e':{MI['a']:[1]},
+    'v':{MI['a']:[1]},
+    'Y':{MI['c']:[0]},
+}
+
 class Inventories:
 
     def __init__(
@@ -47,13 +55,10 @@ class Inventories:
         and adds the new units to the current inventory using the 'add_new_units' method.
         It also initializes the 'slices' attribute with empty table slices.
         """
-        self.new_indices = {}
-        self.new_indices[MI['c']] = self.get_new_indices(MI['c'], self.regions)
-        self.new_indices[MI['a']] = self.get_new_indices(MI['a'], self.regions)
-        self.new_indices[MI['n']] = self.get_new_indices(MI['n'], self.regions)
-
         self.add_new_units(MI['c'])
         self.add_new_units(MI['a'])
+        self.matrices['u'] = self.matrices['z'].loc[(sn,MI['c'],sn),(sn,MI['a'],sn)]
+        self.matrices['s'] = self.matrices['z'].loc[(sn,MI['a'],sn),(sn,MI['c'],sn)]
 
         self.slices = self.get_empty_table_slices()
 
@@ -61,41 +66,6 @@ class Inventories:
             self.fill_slices(activity)
         
         self.get_mario_indices() # to be deprecated when mario will allow to initialize database in coefficients
-
-    def get_new_indices(
-            self, 
-            item:str, 
-            regions:list
-    ):
-        """
-        Returns a new multi-index based on the given item and regions.
-
-        Parameters:
-        - item: The item to be used for indexing (Commodity or Activity).
-        - regions: A list of regions to be used for indexing.
-
-        Returns:
-        - new_indices: A new multi-index created from the combination of region, item, and new_items.
-        """
-        if item == MI['c']: 
-            new_items = deepcopy(self.new_commodities)
-        if item == MI['a']:
-            new_items = deepcopy(self.new_activities)
-        if item == MI['n']:
-            new_items = deepcopy(self.builder.sut.get_index(MI['n']))
-
-        region_ind = []
-        item_ind = []
-        new_item_ind = []
-        for r in regions:
-            for i in range(len(new_items)):
-                region_ind.append(r)
-                item_ind.append(item)
-                new_item_ind.append(new_items[i])
-
-        new_indices = pd.MultiIndex.from_arrays([region_ind,item_ind,new_item_ind])    
-
-        return new_indices
 
     def add_new_units(
             self,
@@ -128,57 +98,65 @@ class Inventories:
     
     def get_empty_table_slices(self):
         """
-        Returns a dictionary containing empty slices for different matrices.
-
-        The method creates empty slices for different matrices based on the provided matrix_slices_map.
-        The empty slices are returned as a dictionary with the following structure:
-        {
-            'Commodity': {
-                'z': {
-                    'rows': <empty DataFrame>,
-                    'cols': <empty DataFrame>
-                },
-                'e': {
-                    'cols': <empty DataFrame>
-                },
-                'v': {
-                    'cols': <empty DataFrame>
-                },
-                'Y': {
-                    'rows': <empty DataFrame>
-                }
-            },
-            'Activity': {
-                ...
-            }
-        }
+        Returns a dictionary containing empty table slices for each matrix and item.
 
         Returns:
-            empty_slices (dict): A dictionary containing empty slices for different matrices.
+            dict: A dictionary containing empty table slices for each matrix and item.
+                  The keys of the dictionary are the matrix names, and the values are
+                  dictionaries containing empty table slices for each item. Each item
+                  dictionary contains empty table slices for 'c', 'a', and 'cross'.
         """
-        matrix_slices_map = {
-            'z': ['rows', 'cols'],
-            'e': ['cols'],
-            'v': ['cols'],
-            'Y': ['rows'],
-        }
         empty_slices = {}
 
-        for item in [MI['c'], MI['a']]:  # for commodities and activities
-            empty_slices[item] = {}
-            for m in matrix_slices_map:  # for each matrix where the slices will be added
-                empty_slices[item][m] = {}
-                for s in matrix_slices_map[m]:  # for each type of slice (rows or cols)
-                    if s == 'rows':
-                        empty_slices[item][m][s] = pd.DataFrame(0, index=self.new_indices[item], columns=self.matrices[m].columns)
-                    if s == 'cols':
-                        if 'rows' in matrix_slices_map[m]:  # if, both rows and cols slices needs to be added to the same matrix
-                            dummy_df = pd.concat([self.matrices[m], empty_slices[item][m]['rows']], axis=0)  # get a dummy df with the new rows just to use its index
-                            empty_slices[item][m][s] = pd.DataFrame(0, index=dummy_df.index, columns=self.new_indices[item])  # the new cols must have the same index as the matrix + the one of the rows slice
-                        else:
-                            empty_slices[item][m][s] = pd.DataFrame(0, index=self.matrices[m].index, columns=self.new_indices[item])
+        for matrix in _matrix_slices_map:
+            empty_slices[matrix] = {}
+            for item in _matrix_slices_map[matrix]:
+                empty_slices[matrix][item] = {}
+                for s in _matrix_slices_map[matrix][item]:
+                    new_index = self.get_slice_index(item)
+                    if s == 0:
+                        empty_slices[matrix][item][s] = pd.DataFrame(0, index=new_index, columns=self.matrices[matrix].columns) 
+                    if s == 1:
+                        empty_slices[matrix][item][s] = pd.DataFrame(0, index=self.matrices[matrix].index, columns=new_index)
+            
+            if len(_matrix_slices_map[matrix]) == 2:
+                if matrix == 's':
+                    empty_slices[matrix]['cross'] = pd.DataFrame(0, index=empty_slices[matrix][MI['a']][0].index, columns=empty_slices[matrix][MI['c']][1].columns)
+                if matrix == 'u':
+                    empty_slices[matrix]['cross'] = pd.DataFrame(0, index=empty_slices[matrix][MI['c']][0].index, columns=empty_slices[matrix][MI['a']][1].columns)
 
         return empty_slices
+
+    def get_slice_index(
+            self, 
+            item:str
+        ):
+        """
+        Returns a new index for creating multi-indexed DataFrame slices.
+
+        Parameters:
+        - item (str): The item type ('c' for commodities or 'a' for activities).
+
+        Returns:
+        - new_index (pd.MultiIndex): The new multi-index for creating DataFrame slices.
+
+        """
+        if item == MI['c']:
+            new_items = self.new_commodities
+        if item == MI['a']:
+            new_items = self.new_activities
+        
+        region_ind = []
+        item_ind = []
+        new_items_ind = []
+        for r in self.regions:
+            for i in range(len(new_items)):
+                region_ind.append(r)
+                item_ind.append(item)
+                new_items_ind.append(new_items[i])
+        
+        new_index = pd.MultiIndex.from_arrays([region_ind,item_ind,new_items_ind])
+        return new_index
     
     def fill_slices(
             self,
@@ -427,9 +405,9 @@ class Inventories:
             for m in self.slices[item]:
                 for s in self.slices[item][m]:
                     if s == 'rows':
-                        self.matrices[m] = pd.concat([self.matrices[m], self.slices[item][m][s]], axis=0)
+                        self.matrices[m] = pd.concat([self.matrices[m], self.slices[item][m][s]], axis=0, ignore_index=True)
                     if s == 'cols':
-                        self.matrices[m] = pd.concat([self.matrices[m], self.slices[item][m][s]], axis=1)
+                        self.matrices[m] = pd.concat([self.matrices[m], self.slices[item][m][s]], axis=1, ignore_index=True)
         for m in self.matrices:
             self.matrices[m].fillna(0, inplace=True) # to check why nans are present
 

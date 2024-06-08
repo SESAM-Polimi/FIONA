@@ -249,3 +249,4 @@ db.read_inventories(path=master_file_path)
 db.add_inventories(source='excel')
 
 # %%
+
