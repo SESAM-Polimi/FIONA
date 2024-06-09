@@ -21,3 +21,5 @@ def read_fiona_inventory_templates(instance,path):
             inventories[instance.master_sheet.query(f'`Sheet name` == "{i}"')[MI['a']].values[0]] = inventories.pop(i) # rename key from sheet to activity name   
     
     return inventories
+
+

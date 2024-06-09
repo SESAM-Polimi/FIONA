@@ -22,12 +22,20 @@ def get_fiona_master_template(
 
 def get_fiona_inventory_templates(
         new_sheets,
+        units,
         inv_columns,
         overwrite,
         path
     ):
 
     inventory_sheet = pd.DataFrame(columns=inv_columns)
+    units_sheet = pd.DataFrame()
+    for item,unit in units.items():
+
+        unit_index = pd.MultiIndex.from_arrays([[item for i in range(unit.shape[0])],list(unit.index)])
+        unit.index = unit_index
+        units_sheet = pd.concat([units_sheet,unit],axis=0)
+    
     if overwrite:
         mode = 'replace'
     else:
@@ -36,6 +44,8 @@ def get_fiona_inventory_templates(
     with pd.ExcelWriter(path, mode='a', engine='openpyxl', if_sheet_exists=mode) as writer:
         for sheet in new_sheets:
             inventory_sheet.to_excel(writer, sheet_name=sheet, index=False)
+        units_sheet.to_excel(writer, sheet_name='DB units',merge_cells=False)
+    
 
     # add data validation...
 

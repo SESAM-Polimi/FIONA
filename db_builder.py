@@ -208,7 +208,7 @@ class DB_builder():
             overwrite (bool, optional): Specifies whether to overwrite existing templates. Defaults to True.
         """
         new_sheets = self.master_sheet['Sheet name'].unique()
-        get_fiona_inventory_templates(new_sheets, InvS_cols, overwrite, path)
+        get_fiona_inventory_templates(new_sheets, self.sut.units, InvS_cols, overwrite, path)
 
     def read_inventories(self, path: str):
         """

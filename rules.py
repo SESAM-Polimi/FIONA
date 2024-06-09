@@ -42,7 +42,6 @@ _MASTER_SHEET_COLUMNS = [
     'Total output',
     MI['n'],
     f'Parent {MI["a"]}',
-    f'Parent {MI["r"]}',
     'Leave empty',
     'Reference'
     ]
