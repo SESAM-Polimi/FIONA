@@ -1,9 +1,13 @@
 import pandas as pd
 import pint 
 
+from rules import setup_logger
+from rules import LOG_MESSAGES as logmsg
+
 from copy import deepcopy
 from mario.tools.constants import _MASTER_INDEX as MI
 
+logger = setup_logger('Inventories')
 sn = slice(None)
 
 _matrix_slices_map = {
@@ -55,15 +59,21 @@ class Inventories:
         and adds the new units to the current inventory using the 'add_new_units' method.
         It also initializes the 'slices' attribute with empty table slices.
         """
+
         self.add_new_units(MI['c'])
         self.add_new_units(MI['a'])
+        logger.info(f"{logmsg['dm']} | Units of new activities and commodities added to the SUT database")
+
         self.matrices['u'] = self.matrices['z'].loc[(sn,MI['c'],sn),(sn,MI['a'],sn)]
         self.matrices['s'] = self.matrices['z'].loc[(sn,MI['a'],sn),(sn,MI['c'],sn)]
 
         self.slices = {}
         for activity in self.new_activities:
             self.slices[activity] = self.get_empty_table_slices(activity)
+            logger.info(f"{logmsg['dm']} | Empty slices created for activity '{activity}'")
+            
             self.fill_slices(activity)
+            logger.info(f"{logmsg['dm']} | Slices filled for activity '{activity}'")
         
         self.matrices['z'] = pd.concat([self.matrices['u'],self.matrices['s']],axis=1).fillna(0)
         
@@ -203,8 +213,10 @@ class Inventories:
                 self.slices[activity]['u'][MI['a']][1].loc[:,(region,MI['a'],activity)] = self.matrices['u'].loc[:,(region,MI['a'],parent_activity)].values
                 self.slices[activity]['v'][MI['a']][1].loc[:,(region,MI['a'],activity)] = self.matrices['v'].loc[:,(region,MI['a'],parent_activity)].values
                 self.slices[activity]['e'][MI['a']][1].loc[:,(region,MI['a'],activity)] = self.matrices['e'].loc[:,(region,MI['a'],parent_activity)].values
-                            
+                logger.info(f"{logmsg['dm']} | Activity '{activity}' initialized equal to parent activity '{parent_activity}' in region '{region}'")
+                
         inventory = self.make_units_consistent_to_database(inventory) 
+        logger.info(f"{logmsg['dm']} | Units of inventory for activity '{activity}' made consistent with the units of the SUT database")
 
         for region_to in target_regions:
             self.fill_commodities_inputs(inventory,region_to,activity)
@@ -360,7 +372,6 @@ class Inventories:
         commodity = self.builder.master_sheet.query(f"{MI['a']}==@activity")[MI['c']].values[0]
 
         self.slices[activity]['s']['cross'].loc[(region,MI['a'],activity),(region,MI['c'],commodity)] = market_share
-
 
     def fill_final_demand(
             self,

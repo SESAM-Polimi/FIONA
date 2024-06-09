@@ -3,7 +3,7 @@ import mario
 
 from interactions.excel.exporters import get_fiona_master_template,get_fiona_inventory_templates
 from interactions.excel.readers import read_fiona_master_template,read_fiona_inventory_templates
-from interactions.mario.add_inventories import Inventories
+from add_inventories import Inventories
 from mario.tools.constants import _MASTER_INDEX as MI
 
 from rules import setup_logger
@@ -96,9 +96,7 @@ class DB_builder():
             None
         """
         logger.info(f"{logmsg['r']} | Reading master template from {path}")
-        master_sheet, self.regions_maps = read_fiona_master_template(path,MS_name,RMS_name)
-        if master_sheet.empty:
-            raise ValueError("Master sheet is empty. Please fill it")
+        master_sheet, self.regions_maps = read_fiona_master_template(self,path,MS_name,RMS_name)
         self.master_sheet = master_sheet
         self.get_new_sets()
 
@@ -109,6 +107,7 @@ class DB_builder():
         self,
         source:str,
         scenario:str = 'baseline',
+        add_to_FIONA:bool = False,
     ):        
         """
         Adds inventories to the database.
@@ -144,11 +143,14 @@ class DB_builder():
             self.Inv_builder = Inventories(self,matrices)
             self.Inv_builder.add_from_master()
 
+            logger.info(f"{logmsg['dm']} | Inventories added to '{scenario}' scenario")
             new_matrices = {'baseline': self.Inv_builder.matrices}
             new_units = self.Inv_builder.units
             indices = self.Inv_builder.mario_indices
         
             # add to FIONA
+            if add_to_FIONA:
+                logger.info(f"{logmsg['w']} | Adding inventories to FIONA SQL database")
 
         if source == 'FIONA':
             raise NotImplementedError("FIONA inventories not implemented yet")
@@ -156,6 +158,7 @@ class DB_builder():
         new_matrices['baseline']['EY'] = self.sut.get_data(matrices=['EY'],scenarios=[scenario])[scenario][0]
 
         # initialize new mario instance
+        logger.info(f"{logmsg['dm']} | Initializing new mario.Database instance")
         self.sut = mario.Database(
             name=None,
             table='SUT',
@@ -194,6 +197,8 @@ class DB_builder():
         self.parented_activities = parented_activities
         self.non_parented_activites = non_parented_activites
         self.new_activities = list(self.new_activities)
+        
+        logger.info(f"{logmsg['r']} | New activities and commodities retrieved")
 
     def get_inventory_templates(
         self,
@@ -209,6 +214,7 @@ class DB_builder():
         """
         new_sheets = self.master_sheet['Sheet name'].unique()
         get_fiona_inventory_templates(new_sheets, self.sut.units, InvS_cols, overwrite, path)
+        logger.info(f"{logmsg['w']} | Inventory templates saved to {path}")
 
     def read_inventories(self, path: str):
         """
@@ -221,6 +227,7 @@ class DB_builder():
             None
         """
         self.inventories = read_fiona_inventory_templates(self, path)
+        logger.info(f"{logmsg['r']} | Inventories read from {path}")
 
 #%%
 if __name__ == '__main__':
