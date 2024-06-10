@@ -78,14 +78,17 @@ class Inventories:
             logger.info(f"{logmsg['dm']} | Slices filled for activity '{activity}'")
         
         # retry errors
-
-        self.matrices['z'] = pd.concat([self.matrices['u'],self.matrices['s']],axis=1).fillna(0)
         
         new_act_indices = self.matrices['s'].loc[(sn,MI['a'],self.new_activities),:].index
         new_com_indices = self.matrices['u'].loc[(sn,MI['c'],self.new_commodities),:].index
         self.matrices['Y'] = pd.concat([self.matrices['Y'],pd.DataFrame(0, index=new_act_indices, columns=self.matrices['Y'].columns)],axis=0)
         self.matrices['v'] = pd.concat([self.matrices['v'],pd.DataFrame(0, index=self.matrices['v'].index, columns=new_com_indices)],axis=1)
         self.matrices['e'] = pd.concat([self.matrices['e'],pd.DataFrame(0, index=self.matrices['e'].index, columns=new_com_indices)],axis=1)
+
+        self.matrices['z'] = pd.concat([self.matrices['u'],self.matrices['s']],axis=1).fillna(0)
+
+        logger.info(f"{logmsg['dm']} | Sorting indices of all matrices in the SUT database")
+        self.reindex_matrices()
 
         self.get_mario_indices() # to be deprecated when mario will allow to initialize database in coefficients
 
@@ -238,6 +241,21 @@ class Inventories:
         self.add_slices(activity)
         # store eventual errors in a dictionary to retry
 
+    def reindex_matrices(
+            self,
+    ):
+        matrices_levels = {
+            'z': {0:3,1:3},
+            'e': {0:1,1:3},
+            'v': {0:1,1:3},
+            'Y': {0:3,1:3},
+            }
+
+        for matrix in matrices_levels:
+            for ax in matrices_levels[matrix]:
+                levels = list(range(matrices_levels[matrix][ax]))
+                self.matrices[matrix].sort_index(axis=ax, level=levels, inplace=True)
+            
 
     def make_units_consistent_to_database(
             self, 
