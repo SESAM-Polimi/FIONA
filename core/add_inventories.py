@@ -476,6 +476,15 @@ class Inventories:
                     for s in self.slices[activity][matrix][item]:
                         self.matrices[matrix] = pd.concat([self.matrices[matrix],self.slices[activity][matrix][item][s]],axis=s)
 
+            self.matrices[matrix].fillna(0,inplace=True)
+            if matrix in ['u','s']:
+                self.matrices[matrix] = self.matrices[matrix].groupby(level=[0,1,2],axis=0).sum()
+                self.matrices[matrix] = self.matrices[matrix].groupby(level=[0,1,2],axis=1).sum()
+            if matrix in ['v','e']:
+                self.matrices[matrix] = self.matrices[matrix].groupby(level=[0,1,2],axis=1).sum()
+            if matrix == 'Y':
+                self.matrices[matrix] = self.matrices[matrix].groupby(level=[0,1,2],axis=0).sum()
+
         for matrix in self.slices[activity]:
             self.matrices[matrix].fillna(0,inplace=True)
             if matrix in ['u','s']:
