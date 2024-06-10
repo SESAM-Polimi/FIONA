@@ -14,7 +14,7 @@ def read_fiona_master_template(instance,path,master_name,reg_map_name):
 
     return master_sheet, regions_maps
 
-def read_fiona_inventory_templates(instance,path):
+def read_fiona_inventory_templates(instance,path,check):
 
     inventories = pd.read_excel(path,sheet_name=None,header=0,)
     keys = list(inventories.keys())
@@ -22,10 +22,13 @@ def read_fiona_inventory_templates(instance,path):
     for i in keys:
         if i not in instance.master_sheet['Sheet name'].unique():
             del inventories[i] # drop all sheets that don't contain inventory data
+        elif instance.master_sheet.query(f"{MI['a']}==@i")['Leave empty'].values[0] == True:
+            del inventories[i] # drop all inventories to be left empty
         else:
             inventories[instance.master_sheet.query(f'`Sheet name` == "{i}"')[MI['a']].values[0]] = inventories.pop(i) # rename key from sheet to activity name   
 
-    check_for_errors_in_inventories(instance,inventories,instance.regions_maps)
+    if check:
+        check_for_errors_in_inventories(instance,inventories,instance.regions_maps)
 
     return inventories
 
@@ -49,7 +52,15 @@ def check_for_errors_in_master_sheet(instance,master_sheet,regions_maps):
     # check if any FU quantity is not provided
     if master_sheet['FU quantity'].isnull().values.any():
         raise ValueError("Error in Master excel sheet | Some FU quantities are missing")
-    
+    # check if FU quantities provided are float or int
+    err_msg = []
+    for i in master_sheet['FU quantity']:
+        if not pd.isna(i):
+            if not isinstance(i,(float,int)):
+                err_msg.append(i)
+    if err_msg != []:
+        raise ValueError(f"Error in Master excel sheet | Some FU quantities are not numerical values: {err_msg}")
+
     # check if all FU quantities are float or int
     if not master_sheet['FU quantity'].apply(lambda x: isinstance(x,(float,int))).all():
         raise ValueError("Error in Master excel sheet | Some FU quantities are not provided as numerical values")
@@ -57,7 +68,16 @@ def check_for_errors_in_master_sheet(instance,master_sheet,regions_maps):
     # check if any FU unit is not provided
     if master_sheet['FU unit'].isnull().values.any():
         raise ValueError("Error in Master excel sheet | Some FU units are missing")
-    
+
+    # check if market shares provided are float or int
+    err_msg = []
+    for i in master_sheet['Market share']:
+        if not pd.isna(i):
+            if not isinstance(i,(float,int)):
+                err_msg.append(i)
+    if err_msg != []:
+        raise ValueError(f"Error in Master excel sheet | Some market shares are not provided as numerical values: {err_msg}")
+
     # check if total outputs provided are float or int
     err_msg = []
     for i in master_sheet['Total output']:
@@ -100,6 +120,15 @@ def check_for_errors_in_master_sheet(instance,master_sheet,regions_maps):
 
 def check_for_errors_in_region_maps(instance,regions_maps):
 
+    # check if all cluster names are not repeating any region name
+    err_msg = []
+    for k in regions_maps.items():
+        if k in instance.sut.get_index(MI['r']):
+            err_msg.append(k)
+    err_msg = list(set(err_msg))
+    if err_msg != []:
+        raise ValueError(f"Error in Region maps | Cluster name not allowed: {err_msg}")
+
     allowed_regions = instance.sut.get_index(MI['r'])
     # check if all regions in each regions cluster are allowed
     err_msg = {}
@@ -130,6 +159,7 @@ def check_for_errors_in_inventories(instance,inventories,regions_maps):
         for i in df['Item']:
             if i not in [MI['c'],MI['f'],MI['k']]:
                 err_msg.append(i)
+        err_msg = list(set(err_msg))
         if err_msg != []:
             raise ValueError(f"Error in Inventory sheet for {inventory} | Not allowed items found: {err_msg}")
         
@@ -139,6 +169,7 @@ def check_for_errors_in_inventories(instance,inventories,regions_maps):
         for i in df.query(f"Item=='{item}'")['DB Item']:
             if i not in instance.sut.get_index(MI['c']):
                 err_msg.append(i)
+        err_msg = list(set(err_msg))
         if err_msg != []:
             raise ValueError(f"Error in Inventory sheet for {inventory} | Not allowed commodities found: {err_msg}")
     
@@ -148,6 +179,7 @@ def check_for_errors_in_inventories(instance,inventories,regions_maps):
         for i in df.query(f"Item=='{item}'")['DB Item']:
             if i not in instance.sut.get_index(MI['f']):
                 err_msg.append(i)
+        err_msg = list(set(err_msg))
         if err_msg != []:
             raise ValueError(f"Error in Inventory sheet for {inventory} | Not allowed activities found: {err_msg}")
         
@@ -157,6 +189,7 @@ def check_for_errors_in_inventories(instance,inventories,regions_maps):
         for i in df.query(f"Item=='{item}'")['DB Item']:
             if i not in instance.sut.get_index(MI['k']):
                 err_msg.append(i)
+        err_msg = list(set(err_msg))
         if err_msg != []:
             raise ValueError(f"Error in Inventory sheet for {inventory} | Not allowed consumption categories found: {err_msg}")
         
@@ -169,6 +202,7 @@ def check_for_errors_in_inventories(instance,inventories,regions_maps):
         for i in df.query(f"Item=='{item}'")['DB Region']:
             if i not in allowed_regions:
                 err_msg.append(i)
+        err_msg = list(set(err_msg))
         if err_msg != []:
             raise ValueError(f"Error in Inventory sheet for {inventory} | Not allowed regions found: {err_msg}")
 
@@ -177,6 +211,7 @@ def check_for_errors_in_inventories(instance,inventories,regions_maps):
         for i in df['Type']:
             if i not in ['Update','Percentage','Absolute']:
                 err_msg.append(i)
+        err_msg = list(set(err_msg))
         if err_msg != []:
             raise ValueError(f"Error in Inventory sheet for {inventory} | Not allowed types found: {err_msg}")
         
@@ -193,6 +228,7 @@ def check_for_errors_in_inventories(instance,inventories,regions_maps):
             if msg is not None:
                 err_msg += [msg]
 
+        err_msg = list(set(err_msg))
         if err_msg != []:
             raise ValueError(f"Error in Inventory sheet for {inventory} | Non convertible units found: {err_msg}")
 

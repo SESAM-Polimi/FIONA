@@ -3,7 +3,7 @@ import mario
 
 from interactions.excel.exporters import get_fiona_master_template,get_fiona_inventory_templates
 from interactions.excel.readers import read_fiona_master_template,read_fiona_inventory_templates
-from add_inventories import Inventories
+from core.add_inventories import Inventories
 from mario.tools.constants import _MASTER_INDEX as MI
 
 from rules import setup_logger
@@ -29,7 +29,7 @@ class DB_builder():
         read_master_file:bool = False,
     ):
         """
-        Initialize the DB uilder object.
+        Initialize the DB builder object.
 
         Args:
             sut_path (str): The path to the SUT file.
@@ -58,7 +58,7 @@ class DB_builder():
             self.read_master_template(path=master_file_path)
 
         if sut_mode=='flows':
-            logger.info(f"{logmsg['dm']} | Resetting SUT to coefficients")  # MAYBE BETTER ADDING THE COEFFICIENTS INSTEAD OF DELETING THE FLOWS
+            logger.info(f"{logmsg['dm']} | It is required to reset the SUT to coefficients")
             self.sut.reset_to_coefficients(self.sut.scenarios[0])
         
     def get_master_template(
@@ -110,7 +110,7 @@ class DB_builder():
         add_to_FIONA:bool = False,
     ):        
         """
-        Adds inventories to the database.
+        Adds inventories to the database.a
 
         Args:
             source (str): The source of the inventories. Currently supports 'excel' and 'FIONA'.
@@ -216,7 +216,7 @@ class DB_builder():
         get_fiona_inventory_templates(new_sheets, self.sut.units, InvS_cols, overwrite, path)
         logger.info(f"{logmsg['w']} | Inventory templates saved to {path}")
 
-    def read_inventories(self, path: str):
+    def read_inventories(self, path: str,check_errors:bool=False):
         """
         Reads inventory templates from the specified path and stores them in the 'inventories' attribute.
 
@@ -226,34 +226,12 @@ class DB_builder():
         Returns:
             None
         """
-        self.inventories = read_fiona_inventory_templates(self, path)
-        logger.info(f"{logmsg['r']} | Inventories read from {path}")
+        self.inventories = read_fiona_inventory_templates(self, path, check_errors)
+        if check_errors:
+            additional_log = "| No errors found"
+        else:
+            additional_log = ""
+        logger.info(f"{logmsg['r']} | Inventories read from {path} {additional_log}")
 
-#%%
-if __name__ == '__main__':
-    sut_path = 'tests/test_SUT.xlsx'
-    sut_mode = 'coefficients'
-    master_file_path = 'tests/master.xlsx'
 
-    db = DB_builder(
-        sut_path=sut_path,
-        sut_mode=sut_mode,
-        master_file_path=master_file_path,
-        sut_format='xlsx',
-        read_master_file=True,
-    )
-
-#%%
-# db.read_master_template(path=master_file_path)
-
-#%%
-# db.get_inventory_templates(path=master_file_path)
-
-#%%
-db.read_inventories(path=master_file_path)
-
-#%%
-db.add_inventories(source='excel')
-
-# %%
 

@@ -68,6 +68,8 @@ class Inventories:
         self.matrices['s'] = self.matrices['z'].loc[(sn,MI['a'],sn),(sn,MI['c'],sn)]
 
         self.slices = {}
+        # create a dictionary with errors to retry
+
         for activity in self.new_activities:
             self.slices[activity] = self.get_empty_table_slices(activity)
             logger.info(f"{logmsg['dm']} | Empty slices created for activity '{activity}'")
@@ -75,8 +77,16 @@ class Inventories:
             self.fill_slices(activity)
             logger.info(f"{logmsg['dm']} | Slices filled for activity '{activity}'")
         
+        # retry errors
+
         self.matrices['z'] = pd.concat([self.matrices['u'],self.matrices['s']],axis=1).fillna(0)
         
+        new_act_indices = self.matrices['s'].loc[(sn,MI['a'],self.new_activities),:].index
+        new_com_indices = self.matrices['u'].loc[(sn,MI['c'],self.new_commodities),:].index
+        self.matrices['Y'] = pd.concat([self.matrices['Y'],pd.DataFrame(0, index=new_act_indices, columns=self.matrices['Y'].columns)],axis=0)
+        self.matrices['v'] = pd.concat([self.matrices['v'],pd.DataFrame(0, index=self.matrices['v'].index, columns=new_com_indices)],axis=1)
+        self.matrices['e'] = pd.concat([self.matrices['e'],pd.DataFrame(0, index=self.matrices['e'].index, columns=new_com_indices)],axis=1)
+
         self.get_mario_indices() # to be deprecated when mario will allow to initialize database in coefficients
 
     def add_new_units(
@@ -106,7 +116,7 @@ class Inventories:
                 df = self.builder.master_sheet.query(f"{MI['a']}==@new_items").loc[:,[item,'FU unit']].set_index(item)
                 df.columns = ['unit']
 
-        self.units[item].append(df)
+        self.units[item] = pd.concat([self.units[item],df],axis=0)
     
     def get_empty_table_slices(self,activity):
         """
@@ -226,6 +236,8 @@ class Inventories:
             self.fill_final_demand(activity,region_to)
 
         self.add_slices(activity)
+        # store eventual errors in a dictionary to retry
+
 
     def make_units_consistent_to_database(
             self, 
@@ -294,7 +306,7 @@ class Inventories:
             
             # get all the necessary information of the input item
             input_item = inventory.loc[i,"DB Item"]
-            if input_item in self.new_commodities:
+            if input_item == self.builder.master_sheet.query(f"{MI['a']}==@activity")[MI['c']].values[0]:
                 is_new = True
             else:
                 is_new = False
@@ -305,20 +317,34 @@ class Inventories:
             if region_from in self.builder.sut.get_index(MI['r']):
                 if change_type == 'Update':
                     if is_new:
-                        self.slices[activity]['u']['cross'].loc[(region_from,MI['c'],input_item),(region_to,MI['a'],activity)] += quantity
+                        if region_from != region_to:
+                            raise ValueError(f"Self-consumption of new commodity {input_item} by activity {activity} is allowed only if coming from the region where the activity is added ({region_to})")
+                        else:                    
+                            self.slices[activity]['u']['cross'].loc[(region_from,MI['c'],input_item),(region_to,MI['a'],activity)] += quantity
                     else:
-                        self.slices[activity]['u'][MI['a']][1].loc[(region_from,MI['c'],input_item),(region_to,MI['a'],activity)] += quantity
-            else:
+                        try:
+                            self.slices[activity]['u'][MI['a']][1].loc[(region_from,MI['c'],input_item),(region_to,MI['a'],activity)] += quantity
+                        except:
+                            raise ValueError("ERRORE: COMMODITY NON ANCORA DEFINITA")
+            
+            elif region_from in self.builder.regions_maps:
+                if is_new:
+                    raise ValueError(f"Self-consumption of new commodity {input_item} by activity {activity} is allowed only if coming from the region where the activity is added ({region_to})")
+
                 if change_type == 'Update':
-                    if is_new:
-                        raise ValueError(f"Spreading the inputs of a new commodity {input_item} from region {region_from} for activity {activity} is not possible")
+                    if input_item in self.new_commodities:
+                        try:
+                            com_use = self.slices[activity]['u'][MI['c']][0].loc[(self.builder.regions_maps[region_from],sn,input_item),(region_to,sn,sn)]
+                        except:
+                            raise ValueError("ERRORE: COMMODITY NON ANCORA DEFINITA")
                     else:
                         com_use = self.builder.sut.u.loc[(self.builder.regions_maps[region_from],sn,input_item),(region_to,sn,sn)]
-                        u_share = com_use.sum(1)/com_use.sum().sum()*quantity
-                        if isinstance(u_share,pd.Series):
-                            u_share = u_share.to_frame()
-                        u_share.columns = pd.MultiIndex.from_arrays([[region_to],[MI['a']],[activity]])
-                        self.slices[activity]['u'][MI['a']][1].loc[u_share.index,u_share.columns] += u_share.values
+                    
+                    u_share = com_use.sum(1)/com_use.sum().sum()*quantity
+                    if isinstance(u_share,pd.Series):
+                        u_share = u_share.to_frame()
+                    u_share.columns = pd.MultiIndex.from_arrays([[region_to],[MI['a']],[activity]])
+                    self.slices[activity]['u'][MI['a']][1].loc[u_share.index,u_share.columns] += u_share.values
 
     def fill_fact_sats_inputs(
         self,
@@ -369,6 +395,8 @@ class Inventories:
         """
 
         market_share = self.builder.master_sheet.query(f"{MI['a']}==@activity")['Market share'].values[0]
+        if pd.isna(market_share):
+            return
         commodity = self.builder.master_sheet.query(f"{MI['a']}==@activity")[MI['c']].values[0]
 
         self.slices[activity]['s']['cross'].loc[(region,MI['a'],activity),(region,MI['c'],commodity)] = market_share
@@ -389,6 +417,8 @@ class Inventories:
             None
         """
         total_output = self.builder.master_sheet.query(f"{MI['a']}==@activity")['Total output'].values[0]
+        if pd.isna(total_output):
+            return
         cons_category = self.builder.master_sheet.query(f"{MI['a']}==@activity")[MI['n']].values[0]
         cons_region = region # could be easily changed by adding a new column in the master file
         commodity = self.builder.master_sheet.query(f"{MI['a']}==@activity")[MI['c']].values[0]
