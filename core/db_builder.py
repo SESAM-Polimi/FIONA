@@ -41,6 +41,7 @@ class DB_builder():
         Raises:
             ValueError: If the sut_mode or sut_format is not acceptable.
         """
+
         if sut_mode not in _ACCEPTABLES['sut_modes']:
             raise ValueError(f"Mode {sut_mode} not in {_ACCEPTABLES}")
         if sut_format not in _ACCEPTABLES['sut_formats']:
@@ -51,6 +52,7 @@ class DB_builder():
             self.sut = mario.parse_from_txt(path=sut_path,table='SUT',mode=sut_mode,)
         if sut_format == 'xlsx':
             self.sut = mario.parse_from_excel(path=sut_path,table='SUT',mode=sut_mode,)
+        logger.info(f"{logmsg['r']} | SUT parsed successfully")
 
         if not read_master_file:
             self.get_master_template(path=master_file_path)
@@ -60,7 +62,8 @@ class DB_builder():
         if sut_mode=='flows':
             logger.info(f"{logmsg['dm']} | It is required to reset the SUT to coefficients")
             self.sut.reset_to_coefficients(self.sut.scenarios[0])
-        
+            logger.info(f"{logmsg['dm']} | SUT reset to coefficients")
+
     def get_master_template(
         self,
         path:str,
@@ -76,6 +79,7 @@ class DB_builder():
         """
         logger.info(f"{logmsg['w']} | Generating master template in {path}")
         get_fiona_master_template(self,MS_name,MS_cols,RMS_name,RMS_cols,path)
+        logger.info(f"{logmsg['w']} | Master template generated")
 
     def read_master_template(
         self,
@@ -97,8 +101,11 @@ class DB_builder():
         """
         logger.info(f"{logmsg['r']} | Reading master template from {path}")
         master_sheet, self.regions_maps = read_fiona_master_template(self,path,MS_name,RMS_name)
+        logger.info(f"{logmsg['r']} | Master template read successfully")
+
         self.master_sheet = master_sheet
         self.get_new_sets()
+        logger.info(f"{logmsg['r']} | New activities and commodities retrieved")
 
         if get_inventories:
             self.get_inventory_templates(path=path)
@@ -167,6 +174,7 @@ class DB_builder():
             init_by_parsers={"matrices": new_matrices, "_indeces": indices, "units": new_units},
             calc_all=False,
             )
+        logger.info(f"{logmsg['dm']} | New mario.Database instance initialized")
 
     def get_new_sets(self):
         """
@@ -198,8 +206,6 @@ class DB_builder():
         self.non_parented_activites = non_parented_activites
         self.new_activities = list(self.new_activities)
         
-        logger.info(f"{logmsg['r']} | New activities and commodities retrieved")
-
     def get_inventory_templates(
         self,
         path:str,
@@ -213,6 +219,7 @@ class DB_builder():
             overwrite (bool, optional): Specifies whether to overwrite existing templates. Defaults to True.
         """
         new_sheets = self.master_sheet['Sheet name'].unique()
+        logger.info(f"{logmsg['w']} | Getting inventory templates from the master sheet")
         get_fiona_inventory_templates(new_sheets, self.sut.units, InvS_cols, overwrite, path)
         logger.info(f"{logmsg['w']} | Inventory templates saved to {path}")
 

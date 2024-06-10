@@ -75,7 +75,6 @@ class Inventories:
             logger.info(f"{logmsg['dm']} | Empty slices created for activity '{activity}'")
             
             self.fill_slices(activity)
-            logger.info(f"{logmsg['dm']} | Slices filled for activity '{activity}'")
         
         # retry errors
         
@@ -89,6 +88,7 @@ class Inventories:
 
         logger.info(f"{logmsg['dm']} | Sorting indices of all matrices in the SUT database")
         self.reindex_matrices()
+        logger.info(f"{logmsg['dm']} | Indices of all matrices sorted")
 
         self.get_mario_indices() # to be deprecated when mario will allow to initialize database in coefficients
 
@@ -200,6 +200,7 @@ class Inventories:
         """
         if self.leave_empty(activity):
             self.add_slices(activity) # if the activity is left empty, just add empty slices
+            logger.info(f"{logmsg['dm']} | Empty slices of activity '{activity}' added to matrices")
             return
         
         # get the region where to add the activity
@@ -227,18 +228,24 @@ class Inventories:
                 self.slices[activity]['v'][MI['a']][1].loc[:,(region,MI['a'],activity)] = self.matrices['v'].loc[:,(region,MI['a'],parent_activity)].values
                 self.slices[activity]['e'][MI['a']][1].loc[:,(region,MI['a'],activity)] = self.matrices['e'].loc[:,(region,MI['a'],parent_activity)].values
                 logger.info(f"{logmsg['dm']} | Activity '{activity}' initialized equal to parent activity '{parent_activity}' in region '{region}'")
-                
-        inventory = self.make_units_consistent_to_database(inventory) 
-        logger.info(f"{logmsg['dm']} | Units of inventory for activity '{activity}' made consistent with the units of the SUT database")
 
+        logger.info(f"{logmsg['dm']} | Converting units of inventory of activity '{activity}' consistently with the units of the SUT database")        
+        inventory = self.make_units_consistent_to_database(inventory) 
+        logger.info(f"{logmsg['dm']} | Units converted for activity '{activity}'")
+        
+        logger.info(f"{logmsg['dm']} | Filling slices for '{activity}'")
         for region_to in target_regions:
             self.fill_commodities_inputs(inventory,region_to,activity)
             self.fill_fact_sats_inputs(inventory,region_to,activity,'v')
             self.fill_fact_sats_inputs(inventory,region_to,activity,'e')
             self.fill_market_shares(activity,region_to)
             self.fill_final_demand(activity,region_to)
+        logger.info(f"{logmsg['dm']} | Slices for '{activity}' filled")
 
+        logger.info(f"{logmsg['dm']} | Adding slices for '{activity}' to matrices")
         self.add_slices(activity)
+        logger.info(f"{logmsg['dm']} | Slices for '{activity}' added to matrices")
+
         # store eventual errors in a dictionary to retry
 
     def reindex_matrices(
