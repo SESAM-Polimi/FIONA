@@ -1,19 +1,19 @@
 #%%
 import mario
 
-from interactions.excel.exporters import get_fiona_master_template,get_fiona_inventory_templates
-from interactions.excel.readers import read_fiona_master_template,read_fiona_inventory_templates
-from core.add_inventories import Inventories
+from fiona.interactions.excel.exporters import get_fiona_master_template,get_fiona_inventory_templates
+from fiona.interactions.excel.readers import read_fiona_master_template,read_fiona_inventory_templates
+from fiona.core.add_inventories import Inventories
 from mario.tools.constants import _MASTER_INDEX as MI
 
-from rules import setup_logger
-from rules import LOG_MESSAGES as logmsg
-from rules import _MASTER_SHEET_NAME as MS_name
-from rules import _REGIONS_MAPS_SHEET_NAME as RMS_name
-from rules import _MASTER_SHEET_COLUMNS as MS_cols
-from rules import _REGIONS_MAPS_SHEET_COLUMNS as RMS_cols
-from rules import _INVENTORY_SHEET_COLUMNS as InvS_cols
-from rules import _ACCEPTABLES
+from fiona.rules import setup_logger
+from fiona.rules import LOG_MESSAGES as logmsg
+from fiona.rules import _MASTER_SHEET_NAME as MS_name
+from fiona.rules import _REGIONS_MAPS_SHEET_NAME as RMS_name
+from fiona.rules import _MASTER_SHEET_COLUMNS as MS_cols
+from fiona.rules import _REGIONS_MAPS_SHEET_COLUMNS as RMS_cols
+from fiona.rules import _INVENTORY_SHEET_COLUMNS as InvS_cols
+from fiona.rules import _ACCEPTABLES
 
 logger = setup_logger('DB_builder')
 

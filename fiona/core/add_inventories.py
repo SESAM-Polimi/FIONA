@@ -1,8 +1,8 @@
 import pandas as pd
 import pint 
 
-from rules import setup_logger
-from rules import LOG_MESSAGES as logmsg
+from fiona.rules import setup_logger
+from fiona.rules import LOG_MESSAGES as logmsg
 
 from copy import deepcopy
 from mario.tools.constants import _MASTER_INDEX as MI
