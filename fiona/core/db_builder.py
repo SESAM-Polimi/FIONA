@@ -22,7 +22,7 @@ class DB_builder():
 
     def __init__(
         self,
-        sut_path:str,
+        sut_path:str or mario.Database,
         sut_mode:str,
         master_file_path:str,
         sut_format:str = 'txt',
@@ -32,7 +32,7 @@ class DB_builder():
         Initialize the DB builder object.
 
         Args:
-            sut_path (str): The path to the SUT file.
+            sut_path (str or mario.Database): The path to the SUT file or a mario.Database object.
             sut_mode (str): The mode of the SUT.
             master_file_path (str): The path to the master file.
             sut_format (str, optional): The format of the SUT file. Defaults to 'txt'.
@@ -52,6 +52,8 @@ class DB_builder():
             self.sut = mario.parse_from_txt(path=sut_path,table='SUT',mode=sut_mode,)
         if sut_format == 'xlsx':
             self.sut = mario.parse_from_excel(path=sut_path,table='SUT',mode=sut_mode,)
+        if sut_format == 'mario':
+            self.sut = sut_path
         logger.info(f"{logmsg['r']} | SUT parsed successfully")
 
         if not read_master_file:
