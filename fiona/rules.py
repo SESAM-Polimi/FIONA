@@ -46,7 +46,7 @@ _MASTER_SHEET_COLUMNS = [
     'Reference'
     ]
 
-_INVENTORY_SHEET_COLUMNS = [  # if change order, change also data validation
+_INVENTORY_SHEET_COLUMNS = [ # if change order, change also data validation
     'Quantity',
     'Unit',
     'Input',
@@ -62,6 +62,6 @@ _REGIONS_MAPS_SHEET_COLUMNS = ['GLOBAL']
 #%%
 _ACCEPTABLES = {
     'sut_modes': ['flows','coefficients'],
-    'sut_formats': ['txt','xlsx'],
+    'sut_formats': ['txt','xlsx','mario'],
     'inventory_sources': ['FIONA','excel']
 }

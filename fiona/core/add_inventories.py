@@ -419,12 +419,14 @@ class Inventories:
         None
         """
 
-        market_share = self.builder.master_sheet.query(f"{MI['a']}==@activity")['Market share'].values[0]
-        if pd.isna(market_share):
-            return
-        commodity = self.builder.master_sheet.query(f"{MI['a']}==@activity")[MI['c']].values[0]
-
-        self.slices[activity]['s']['cross'].loc[(region,MI['a'],activity),(region,MI['c'],commodity)] = market_share
+        market_shares = self.builder.master_sheet.query(f"{MI['a']}==@activity & {MI['r']}==@region")['Market share'].values
+        for i in range(len(market_shares)):
+            if pd.isna(market_shares[i]):
+                market_shares[i] = 0
+        
+        commodities = self.builder.master_sheet.query(f"{MI['a']}==@activity & {MI['r']}==@region")[MI['c']].values
+        for i in range(len(commodities)):
+            self.slices[activity]['s']['cross'].loc[(region,MI['a'],activity),(region,MI['c'],commodities[i])] = market_shares[i]
 
     def fill_final_demand(
             self,
@@ -441,14 +443,17 @@ class Inventories:
         Returns:
             None
         """
-        total_output = self.builder.master_sheet.query(f"{MI['a']}==@activity")['Total output'].values[0]
-        if pd.isna(total_output):
-            return
-        cons_category = self.builder.master_sheet.query(f"{MI['a']}==@activity")[MI['n']].values[0]
-        cons_region = region # could be easily changed by adding a new column in the master file
-        commodity = self.builder.master_sheet.query(f"{MI['a']}==@activity")[MI['c']].values[0]
+        total_outputs = self.builder.master_sheet.query(f"{MI['a']}==@activity & {MI['r']}==@region")['Total output'].values
+        for i in range(len(total_outputs)):
+            if pd.isna(total_outputs[i]):
+                total_outputs[i] = 0
 
-        self.slices[activity]['Y'][MI['c']][0].loc[(region,MI['c'],commodity),(cons_region,MI['n'],cons_category)] += total_output
+        cons_categories = self.builder.master_sheet.query(f"{MI['a']}==@activity & {MI['r']}==@region")[MI['n']].values
+        cons_region = region # could be easily changed by adding a new column in the master file
+        commodities = self.builder.master_sheet.query(f"{MI['a']}==@activity & {MI['r']}==@region")[MI['c']].values
+
+        for i in range(len(commodities)):
+            self.slices[activity]['Y'][MI['c']][0].loc[(region,MI['c'],commodities[i]),(cons_region,MI['n'],cons_categories[i])] += total_outputs[i]
 
     def leave_empty(
             self, 

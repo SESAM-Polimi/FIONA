@@ -138,6 +138,13 @@ class DB_builder():
         
         logger.info(f"{logmsg['a']} | Erasing all scenarios but {scenario}")
 
+        err_msg = []
+        for inventory in self.inventories:
+            if inventory in self.sut.get_index(MI['a']):
+                err_msg.append(inventory)
+        if len(err_msg) > 0:
+            raise ValueError(f"Activities already exist in the SUT: {sorted(list(set(err_msg)))} ")
+
         matrices = {
             'z': self.sut.get_data(matrices=['z'],scenarios=[scenario])[scenario][0],
             'e': self.sut.get_data(matrices=['e'],scenarios=[scenario])[scenario][0],
@@ -244,3 +251,5 @@ class DB_builder():
 
 
 
+
+# %%
