@@ -449,11 +449,19 @@ class Inventories:
                 total_outputs[i] = 0
 
         cons_categories = self.builder.master_sheet.query(f"{MI['a']}==@activity & {MI['r']}==@region")[MI['n']].values
+        new_cons_categories = []
+        
+        for i in range(len(cons_categories)):
+            if pd.isna(cons_categories[i]):
+                new_cons_categories += [self.matrices['Y'].columns.get_level_values(-1)[0]]
+            else:
+                new_cons_categories += cons_categories[i]
+
         cons_region = region # could be easily changed by adding a new column in the master file
         commodities = self.builder.master_sheet.query(f"{MI['a']}==@activity & {MI['r']}==@region")[MI['c']].values
 
         for i in range(len(commodities)):
-            self.slices[activity]['Y'][MI['c']][0].loc[(region,MI['c'],commodities[i]),(cons_region,MI['n'],cons_categories[i])] += total_outputs[i]
+            self.slices[activity]['Y'][MI['c']][0].loc[(region,MI['c'],commodities[i]),(cons_region,MI['n'],new_cons_categories[i])] += total_outputs[i]
 
     def leave_empty(
             self, 
@@ -539,7 +547,7 @@ class Inventories:
         """       
         mario_indices = {}
 
-        for item in MI:
+        for item in MI.vars:
             if item == 'r':
                 mario_indices[item] = {'main': sorted(list(set(self.matrices['z'].index.get_level_values(0))))}
             if item == 'a' or item == 's':

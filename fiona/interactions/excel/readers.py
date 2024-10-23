@@ -22,7 +22,7 @@ def read_fiona_inventory_templates(instance,path,check):
     for i in keys:
         if i not in instance.master_sheet['Sheet name'].unique():
             del inventories[i] # drop all sheets that don't contain inventory data
-        elif instance.master_sheet.query(f"{MI['a']}==@i")['Leave empty'].values[0] == True:
+        elif instance.master_sheet.query(f"`Sheet name`==@i")['Leave empty'].values[0] == True:
             del inventories[i] # drop all inventories to be left empty
         else:
             inventories[instance.master_sheet.query(f'`Sheet name` == "{i}"')[MI['a']].values[0]] = inventories.pop(i) # rename key from sheet to activity name   

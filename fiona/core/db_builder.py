@@ -112,6 +112,7 @@ class DB_builder():
         if get_inventories:
             self.get_inventory_templates(path=path)
        
+       
     def add_inventories(
         self,
         source:str,
@@ -119,7 +120,7 @@ class DB_builder():
         add_to_FIONA:bool = False,
     ):        
         """
-        Adds inventories to the database.a
+        Adds inventories to the database.
 
         Args:
             source (str): The source of the inventories. Currently supports 'excel' and 'FIONA'.
