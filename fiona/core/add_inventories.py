@@ -238,8 +238,8 @@ class Inventories:
             self.fill_commodities_inputs(inventory,region_to,activity)
             self.fill_fact_sats_inputs(inventory,region_to,activity,'v')
             self.fill_fact_sats_inputs(inventory,region_to,activity,'e')
-            self.fill_market_shares(activity,region_to)
-            self.fill_final_demand(activity,region_to)
+            self.fill_market_shares(activity,region_to,region)
+            self.fill_final_demand(activity,region_to,region)
         logger.info(f"{logmsg['dm']} | Slices for '{activity}' filled")
 
         logger.info(f"{logmsg['dm']} | Adding slices for '{activity}' to matrices")
@@ -407,6 +407,7 @@ class Inventories:
         self,
         activity:str,
         region:str,
+        cluster_region:str,
     ):
         """
         Fills the market shares for a given activity and region.
@@ -419,12 +420,12 @@ class Inventories:
         None
         """
 
-        market_shares = self.builder.master_sheet.query(f"{MI['a']}==@activity & {MI['r']}==@region")['Market share'].values
+        market_shares = self.builder.master_sheet.query(f"{MI['a']}==@activity & {MI['r']}==@cluster_region")['Market share'].values
         for i in range(len(market_shares)):
             if pd.isna(market_shares[i]):
                 market_shares[i] = 0
         
-        commodities = self.builder.master_sheet.query(f"{MI['a']}==@activity & {MI['r']}==@region")[MI['c']].values
+        commodities = self.builder.master_sheet.query(f"{MI['a']}==@activity & {MI['r']}==@cluster_region")[MI['c']].values
         for i in range(len(commodities)):
             self.slices[activity]['s']['cross'].loc[(region,MI['a'],activity),(region,MI['c'],commodities[i])] = market_shares[i]
 
@@ -432,6 +433,7 @@ class Inventories:
             self,
             activity:str,
             region:str,
+            cluster_region:str
     ):
         """
         Fills the final demand for a given activity and region.
@@ -443,22 +445,22 @@ class Inventories:
         Returns:
             None
         """
-        total_outputs = self.builder.master_sheet.query(f"{MI['a']}==@activity & {MI['r']}==@region")['Total output'].values
+        total_outputs = self.builder.master_sheet.query(f"{MI['a']}==@activity & {MI['r']}==@cluster_region")['Total output'].values
         for i in range(len(total_outputs)):
             if pd.isna(total_outputs[i]):
                 total_outputs[i] = 0
 
-        cons_categories = self.builder.master_sheet.query(f"{MI['a']}==@activity & {MI['r']}==@region")[MI['n']].values
+        cons_categories = self.builder.master_sheet.query(f"{MI['a']}==@activity & {MI['r']}==@cluster_region")[MI['n']].values
         new_cons_categories = []
         
         for i in range(len(cons_categories)):
             if pd.isna(cons_categories[i]):
                 new_cons_categories += [self.matrices['Y'].columns.get_level_values(-1)[0]]
             else:
-                new_cons_categories += cons_categories[i]
+                new_cons_categories += [cons_categories[i]]
 
         cons_region = region # could be easily changed by adding a new column in the master file
-        commodities = self.builder.master_sheet.query(f"{MI['a']}==@activity & {MI['r']}==@region")[MI['c']].values
+        commodities = self.builder.master_sheet.query(f"{MI['a']}==@activity & {MI['r']}==@cluster_region")[MI['c']].values
 
         for i in range(len(commodities)):
             self.slices[activity]['Y'][MI['c']][0].loc[(region,MI['c'],commodities[i]),(cons_region,MI['n'],new_cons_categories[i])] += total_outputs[i]

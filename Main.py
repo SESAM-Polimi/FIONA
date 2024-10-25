@@ -1,15 +1,15 @@
 #%%
 from fiona.core.db_builder import DB_builder
 
-sut_path = 'tests/conceptual/test_SUT.xlsx'
-sut_format = 'xlsx'
+sut_path = '/Users/lorenzorinaldi/Library/CloudStorage/OneDrive-SharedLibraries-PolitecnicodiMilano/Gabriele Casella - Lorenzo_ROSSI/Exiobase Hybrid 3.3.18 with VA/coefficients'
+sut_format = 'txt'
 sut_mode = 'coefficients'
-master_file_path = 'tests/conceptual/master.xlsx'
+master_file_path = 'master.xlsx'
 
-# sut_path = 'tests/exiobase/coefficients'
-# sut_format = 'txt'
-# sut_mode = 'coefficients'
-# master_file_path = 'tests/exiobase/master.xlsx'
+# sut_path = 'conceptual test/test_sut.xlsx'
+# sut_format = 'xlsx'
+# sut_mode = 'flows'
+# master_file_path = 'conceptual test/master.xlsx'
 
 db = DB_builder(
     sut_path=sut_path,
@@ -20,7 +20,7 @@ db = DB_builder(
 )
 
 #%%
-db.read_master_template(master_file_path)
+# db.read_master_template(master_file_path,get_inventories=True)
 
 #%%
 db.read_inventories(master_file_path,check_errors=False)
