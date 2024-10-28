@@ -140,9 +140,11 @@ class Inventories:
                 for s in _matrix_slices_map[matrix][item]:
                     new_index = self.get_slice_index(item,activity)
                     if s == 0:
+                        extended_index = self.get_extended_index(matrix,MI['a'],1)
                         empty_slices[matrix][item][s] = pd.DataFrame(0, index=new_index, columns=self.matrices[matrix].columns) 
                     if s == 1:
-                        empty_slices[matrix][item][s] = pd.DataFrame(0, index=self.matrices[matrix].index, columns=new_index)
+                        extended_index = self.get_extended_index(matrix,MI['c'],0)
+                        empty_slices[matrix][item][s] = pd.DataFrame(0, index=extended_index, columns=new_index)
             
             if len(_matrix_slices_map[matrix]) == 2:
                 if matrix == 's':
@@ -151,6 +153,39 @@ class Inventories:
                     empty_slices[matrix]['cross'] = pd.DataFrame(0, index=empty_slices[matrix][MI['c']][0].index, columns=empty_slices[matrix][MI['a']][1].columns)
 
         return empty_slices
+
+
+    def get_extended_index(
+            self,
+            matrix:str,
+            item:str,
+            axis:int,
+        )->pd.MultiIndex:
+        """
+        Get the extended index containing old+new items for the given item.
+
+        Args:
+            matrix (str): The matrix for which the index is being extended.
+            item (str): Commodity or Activity
+            axis (int): The axis along which the index is being extended.
+        Returns:
+            pd.MultiIndex: The new multi-index for creating DataFrame slices.
+        
+        """
+        if axis == 0:
+            old_indeces = self.matrices[matrix].index
+        if axis == 1:
+            old_indeces = self.matrices[matrix].columns
+        
+        if old_indeces.nlevels == 1:
+            return old_indeces
+
+        else:
+            if item not in old_indeces.get_level_values(1):
+                return old_indeces
+            else:
+                "..." # to be implemented: add new items for all the regions to old_indeces and return new_indeces
+
 
     def get_slice_index(
             self, 
