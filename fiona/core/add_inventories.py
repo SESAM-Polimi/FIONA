@@ -140,9 +140,11 @@ class Inventories:
                 for s in _matrix_slices_map[matrix][item]:
                     new_index = self.get_slice_index(item,activity)
                     if s == 0:
+                        extended_index = self.get_extended_index(matrix,MI['a'],1,activity)
                         empty_slices[matrix][item][s] = pd.DataFrame(0, index=new_index, columns=self.matrices[matrix].columns) 
                     if s == 1:
-                        empty_slices[matrix][item][s] = pd.DataFrame(0, index=self.matrices[matrix].index, columns=new_index)
+                        extended_index = self.get_extended_index(matrix,MI['c'],0, activity)
+                        empty_slices[matrix][item][s] = pd.DataFrame(0, index=extended_index, columns=new_index)
             
             if len(_matrix_slices_map[matrix]) == 2:
                 if matrix == 's':
@@ -151,6 +153,55 @@ class Inventories:
                     empty_slices[matrix]['cross'] = pd.DataFrame(0, index=empty_slices[matrix][MI['c']][0].index, columns=empty_slices[matrix][MI['a']][1].columns)
 
         return empty_slices
+
+
+    def get_extended_index(
+            self,
+            matrix:str,
+            item:str,
+            axis:int,
+            activity:str,
+        )->pd.MultiIndex:
+        """
+        Get the extended index containing old+new items for the given item.
+
+        Args:
+            matrix (str): The matrix for which the index is being extended.
+            item (str): Commodity or Activity
+            axis (int): The axis along which the index is being extended.
+        Returns:
+            pd.MultiIndex: The new multi-index for creating DataFrame slices.
+        
+        """
+        
+        if axis == 0:
+            old_indeces = self.matrices[matrix].index
+        if axis == 1:
+            old_indeces = self.matrices[matrix].columns
+        
+        if old_indeces.nlevels == 1:
+            return old_indeces
+
+        else:
+            if item not in old_indeces.get_level_values(1):
+                return old_indeces
+            else:
+                extra_index = [[] for i in range(old_indeces.nlevels)]
+                for region in self.builder.sut.get_index(MI['r']):
+                    for element in self.builder.new_commodities:
+                        com_from_activity = self.builder.master_sheet.query(f"{MI['a']}==@activity")[MI['c']].values[0]
+                        if element != com_from_activity:
+                            extra_index[0] += [region]
+                            extra_index[1] += [item]
+                            extra_index[2] += [element]
+                
+                new_indeces = pd.MultiIndex.from_arrays([
+                    list(old_indeces.get_level_values(0))+extra_index[0],
+                    list(old_indeces.get_level_values(1))+extra_index[1],
+                    list(old_indeces.get_level_values(2))+extra_index[2],
+                    ])
+            
+                return new_indeces
 
     def get_slice_index(
             self, 
@@ -514,7 +565,8 @@ class Inventories:
             for item in self.slices[activity][matrix]:
                 if item != 'cross':
                     for s in self.slices[activity][matrix][item]:
-                        self.matrices[matrix] = pd.concat([self.matrices[matrix],self.slices[activity][matrix][item][s]],axis=s)
+                        grouped_slice = self.slices[activity][matrix][item][s].groupby(level=list(range(self.slices[activity][matrix][item][s].index.nlevels)),axis=0).mean()
+                        self.matrices[matrix] = pd.concat([self.matrices[matrix],grouped_slice],axis=s)
 
             self.matrices[matrix].fillna(0,inplace=True)
             if matrix in ['u','s']:
