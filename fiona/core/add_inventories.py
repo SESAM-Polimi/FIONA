@@ -11,11 +11,11 @@ logger = setup_logger('Inventories')
 sn = slice(None)
 
 _matrix_slices_map = {
-    'u':{MI['a']:1},
-    's':{MI['a']:0,MI['c']:1},
-    'e':{MI['a']:1},
-    'v':{MI['a']:1},
-    'Y':{MI['c']:0},
+    'u':{0:MI['c'],1:MI['a'],'concat':1},
+    's':{0:MI['a'],1:MI['c'],'concat':0},
+    'e':{0:MI['k'],1:MI['a'],'concat':1},
+    'v':{0:MI['f'],1:MI['a'],'concat':1},
+    'Y':{0:MI['c'],1:MI['n'],'concat':0},
 }
 
 class Inventories:
@@ -59,7 +59,7 @@ class Inventories:
         and adds the new units to the current inventory using the 'add_new_units' method.
         It also initializes the 'slices' attribute with empty table slices.
         """
-
+             
         self.add_new_units(MI['c'])
         self.add_new_units(MI['a'])
         logger.info(f"{logmsg['dm']} | Units of new activities and commodities added to the SUT database")
@@ -67,16 +67,30 @@ class Inventories:
         self.matrices['u'] = self.matrices['z'].loc[(sn,MI['c'],sn),(sn,MI['a'],sn)]
         self.matrices['s'] = self.matrices['z'].loc[(sn,MI['a'],sn),(sn,MI['c'],sn)]
 
-        self.slices = {}
-        self.empty_slices = self.get_empty_table_slices()
+        empty_slices = self.get_empty_table_slices()
+        logger.info(f"{logmsg['dm']} | Empty slices created'")
 
+        self.filled_slices = deepcopy(empty_slices)
+        self.inputs_to_retry = []
 
         for activity in self.new_activities:
-            self.slices[activity] = self.get_empty_table_slices(activity)
-            logger.info(f"{logmsg['dm']} | Empty slices created for activity '{activity}'")
-            
             self.fill_slices(activity)
-                
+
+        logger.info(f"{logmsg['dm']} | Adding slices to matrices")
+        self.add_slices()
+        logger.info(f"{logmsg['dm']} | Slices for added to matrices")
+        
+        self.filled_slices = deepcopy(empty_slices)
+        if self.inputs_to_retry != []:
+            logger.info(f"{logmsg['dm']} | Retrying to fill inputs imported from regions clusters")
+            self.filled_slices = deepcopy(empty_slices)
+            self.retry_commodities_inputs()
+            logger.info(f"{logmsg['dm']} | Inputs imported from regions clusters successfully filled")
+
+            logger.info(f"{logmsg['dm']} | Adding slices to matrices")
+            self.add_slices()
+            logger.info(f"{logmsg['dm']} | Slices for added to matrices")
+
         new_act_indices = self.matrices['s'].loc[(sn,MI['a'],self.new_activities),:].index
         new_com_indices = self.matrices['u'].loc[(sn,MI['c'],self.new_commodities),:].index
         self.matrices['Y'] = pd.concat([self.matrices['Y'],pd.DataFrame(0, index=new_act_indices, columns=self.matrices['Y'].columns)],axis=0)
@@ -134,106 +148,79 @@ class Inventories:
         empty_slices = {}
 
         for matrix in _matrix_slices_map:
-            empty_slices[matrix] = {}
-            for item,axis in _matrix_slices_map[matrix].items():
-                empty_slices[matrix][axis] = {}
-                for s in _matrix_slices_map[matrix][item]:
-                    new_index = self.get_slice_index(item,activity)
-                    if s == 0:
-                        extended_index = self.get_extended_index(matrix,MI['a'],1,activity)
-                        empty_slices[matrix][item][s] = pd.DataFrame(0, index=new_index, columns=self.matrices[matrix].columns) 
-                    if s == 1:
-                        extended_index = self.get_extended_index(matrix,MI['c'],0, activity)
-                        empty_slices[matrix][item][s] = pd.DataFrame(0, index=extended_index, columns=new_index)
+            new_index,new_columns = self.get_slice_indices(matrix)
+            empty_slices[matrix] = pd.DataFrame(0, index=new_index, columns=new_columns) 
             
-            if len(_matrix_slices_map[matrix]) == 2:
-                if matrix == 's':
-                    empty_slices[matrix]['cross'] = pd.DataFrame(0, index=empty_slices[matrix][MI['a']][0].index, columns=empty_slices[matrix][MI['c']][1].columns)
-                if matrix == 'u':
-                    empty_slices[matrix]['cross'] = pd.DataFrame(0, index=empty_slices[matrix][MI['c']][0].index, columns=empty_slices[matrix][MI['a']][1].columns)
-
         return empty_slices
 
-
-    def get_extended_index(
+    def get_slice_indices(
             self,
             matrix:str,
-            item:str,
-            axis:int,
-            activity:str,
         )->pd.MultiIndex:
         """
-        Get the extended index containing old+new items for the given item.
+        Get the index and columns for a given matrix.
 
         Args:
-            matrix (str): The matrix for which the index is being extended.
-            item (str): Commodity or Activity
-            axis (int): The axis along which the index is being extended.
+            matrix (str): The matrix to which the slices will be added.
         Returns:
-            pd.MultiIndex: The new multi-index for creating DataFrame slices.
+            pd.MultiIndex: The multi-level index and columns of the slice
         
         """
         
-        if axis == 0:
-            old_indeces = self.matrices[matrix].index
-        if axis == 1:
-            old_indeces = self.matrices[matrix].columns
-        
-        if old_indeces.nlevels == 1:
-            return old_indeces
+        concat = _matrix_slices_map[matrix]['concat']
+        item_row = _matrix_slices_map[matrix][0]
+        item_col = _matrix_slices_map[matrix][1]
 
-        else:
-            if item not in old_indeces.get_level_values(1):
-                return old_indeces
-            else:
-                extra_index = [[] for i in range(old_indeces.nlevels)]
-                for region in self.builder.sut.get_index(MI['r']):
-                    for element in self.builder.new_commodities:
-                        # com_from_activity = self.builder.master_sheet.query(f"{MI['a']}==@activity")[MI['c']].values[0]
-                        # if element != com_from_activity:
-                        extra_index[0] += [region]
-                        extra_index[1] += [item]
-                        extra_index[2] += [element]
-            
-                new_indeces = pd.MultiIndex.from_arrays([
-                    list(old_indeces.get_level_values(0))+extra_index[0],
-                    list(old_indeces.get_level_values(1))+extra_index[1],
-                    list(old_indeces.get_level_values(2))+extra_index[2],
-                    ])
-            
-                return new_indeces
+        if concat == 0:
+            empty_index = [[],[],[]]  # will always be 3 levels
+            items_to_add_on_rows = self.builder.new_commodities if item_row == MI['c'] else self.builder.new_activities
+            for region in self.regions:
+                for item in items_to_add_on_rows:
+                    empty_index[0] += [region]
+                    empty_index[1] += [item_row]
+                    empty_index[2] += [item]
+            new_index = pd.MultiIndex.from_arrays(empty_index)
 
-    def get_slice_index(
-            self, 
-            item:str,
-            activity:str,
-        ):
-        """
-        Returns a new index for creating multi-indexed DataFrame slices.
+            empty_extra_columns = [[],[],[]] # will always be 3 levels
+            items_to_add_on_cols = self.builder.new_activities if item_col == MI['a'] else self.builder.new_commodities
+            for region in self.regions:
+                for item in items_to_add_on_cols:
+                    empty_extra_columns[0] += [region]
+                    empty_extra_columns[1] += [item_col]
+                    empty_extra_columns[2] += [item]
+            new_columns = pd.MultiIndex.from_arrays([
+                self.matrices[matrix].columns.get_level_values(0).tolist() + empty_extra_columns[0],
+                self.matrices[matrix].columns.get_level_values(1).tolist() + empty_extra_columns[1],
+                self.matrices[matrix].columns.get_level_values(2).tolist() + empty_extra_columns[2],
+            ])
 
-        Parameters:
-        - item (str): The item type ('c' for commodities or 'a' for activities).
+        if concat == 1:
+            if matrix in ['v','e']:
+                new_index = self.matrices[matrix].index
+            else: 
+                empty_extra_index = [[],[],[]]  # will always be 3 levels if not v or e
+                items_to_add_on_rows = self.builder.new_activities if item_row == MI['a'] else self.builder.new_commodities
+                for region in self.regions:
+                    for item in items_to_add_on_rows:
+                        empty_extra_index[0] += [region]
+                        empty_extra_index[1] += [item_row]
+                        empty_extra_index[2] += [item]
+                new_index = pd.MultiIndex.from_arrays([
+                    self.matrices[matrix].index.get_level_values(0).tolist() + empty_extra_index[0],
+                    self.matrices[matrix].index.get_level_values(1).tolist() + empty_extra_index[1],
+                    self.matrices[matrix].index.get_level_values(2).tolist() + empty_extra_index[2],
+                ])
 
-        Returns:
-        - new_index (pd.MultiIndex): The new multi-index for creating DataFrame slices.
+            empty_columns = [[],[],[]] # will always be 3 levels
+            items_to_add_on_cols = self.builder.new_activities if item_col == MI['a'] else self.builder.new_commodities
+            for region in self.regions:
+                for item in items_to_add_on_cols:
+                    empty_columns[0] += [region]
+                    empty_columns[1] += [item_col]
+                    empty_columns[2] += [item]
+            new_columns = pd.MultiIndex.from_arrays(empty_columns)
 
-        """
-        if item == MI['c']:
-            new_items = self.builder.master_sheet.query(f"{MI['a']}==@activity")[MI['c']].values
-        if item == MI['a']:
-            new_items = [deepcopy(activity)]
-        
-        region_ind = []
-        item_ind = []
-        new_items_ind = []
-        for r in self.regions:
-            for i in range(len(new_items)):
-                region_ind.append(r)
-                item_ind.append(item)
-                new_items_ind.append(new_items[i])
-        
-        new_index = pd.MultiIndex.from_arrays([region_ind,item_ind,new_items_ind])
-        return new_index
+        return new_index, new_columns
     
     def fill_slices(
             self,
@@ -250,10 +237,11 @@ class Inventories:
             ValueError: If the parent region of the activity is not in the SUT.
         """
         if self.leave_empty(activity):
-            self.add_slices(activity) # if the activity is left empty, just add empty slices
-            logger.info(f"{logmsg['dm']} | Empty slices of activity '{activity}' added to matrices")
+            logger.info(f"{logmsg['dm']} | '{activity}' not added to matrices because 'Leave empty' is True")
             return
         
+        slices = self.get_empty_table_slices()
+
         # get the region where to add the activity
         region = self.builder.master_sheet.query(f"{MI['a']}==@activity")[MI['r']].values[0]
 
@@ -269,15 +257,15 @@ class Inventories:
         # get the inventory for the activity
         inventory = self.builder.inventories[activity]
 
-        # if the activity must be structured based on a parent activity
+        # in case the activity has a parent to be initialized from
         if activity in self.parented_activities: 
             parent_activity = self.builder.master_sheet.query(f"{MI['a']}==@activity")[f'Parent {MI["a"]}'].values[0]
 
             # copy the parent activity in the target region into the new activity inventory on u, v and e
             for region in target_regions: 
-                self.slices[activity]['u'][MI['a']][1].loc[:,(region,MI['a'],activity)] = self.matrices['u'].loc[:,(region,MI['a'],parent_activity)].values
-                self.slices[activity]['v'][MI['a']][1].loc[:,(region,MI['a'],activity)] = self.matrices['v'].loc[:,(region,MI['a'],parent_activity)].values
-                self.slices[activity]['e'][MI['a']][1].loc[:,(region,MI['a'],activity)] = self.matrices['e'].loc[:,(region,MI['a'],parent_activity)].values
+                slices['u'].loc[self.matrices['u'].index,(region,MI['a'],activity)] = self.matrices['u'].loc[:,(region,MI['a'],parent_activity)].values
+                slices['v'][MI['a']][1].loc[:,(region,MI['a'],activity)] = self.matrices['v'].loc[:,(region,MI['a'],parent_activity)].values
+                slices['e'][MI['a']][1].loc[:,(region,MI['a'],activity)] = self.matrices['e'].loc[:,(region,MI['a'],parent_activity)].values
                 logger.info(f"{logmsg['dm']} | Activity '{activity}' initialized equal to parent activity '{parent_activity}' in region '{region}'")
 
         logger.info(f"{logmsg['dm']} | Converting units of inventory of activity '{activity}' consistently with the units of the SUT database")        
@@ -286,18 +274,15 @@ class Inventories:
         
         logger.info(f"{logmsg['dm']} | Filling slices for '{activity}'")
         for region_to in target_regions:
-            self.fill_commodities_inputs(inventory,region_to,activity)
-            self.fill_fact_sats_inputs(inventory,region_to,activity,'v')
-            self.fill_fact_sats_inputs(inventory,region_to,activity,'e')
-            self.fill_market_shares(activity,region_to,region)
-            self.fill_final_demand(activity,region_to,region)
+            slices = self.fill_commodities_inputs(inventory,region_to,activity,slices)
+            slices = self.fill_fact_sats_inputs(inventory,region_to,activity,'v',slices)
+            slices = self.fill_fact_sats_inputs(inventory,region_to,activity,'e',slices)
+            slices = self.fill_market_shares(activity,region_to,region,slices)
+            slices = self.fill_final_demand(activity,region_to,region,slices)
         logger.info(f"{logmsg['dm']} | Slices for '{activity}' filled")
 
-        logger.info(f"{logmsg['dm']} | Adding slices for '{activity}' to matrices")
-        self.add_slices(activity)
-        logger.info(f"{logmsg['dm']} | Slices for '{activity}' added to matrices")
-
-        # store eventual errors in a dictionary to retry
+        for matrix in slices:
+            self.filled_slices[matrix] += slices[matrix]
 
     def reindex_matrices(
             self,
@@ -364,6 +349,7 @@ class Inventories:
         full_inventory:pd.DataFrame,
         region_to:str,
         activity:str,
+        slices:dict,
     ):
         """
         Fills the commodities inputs for a given region and activity.
@@ -382,45 +368,56 @@ class Inventories:
             
             # get all the necessary information of the input item
             input_item = inventory.loc[i,"DB Item"]
-            if input_item == self.builder.master_sheet.query(f"{MI['a']}==@activity")[MI['c']].values[0]:
-                is_new = True
-            else:
+            if input_item in self.builder.sut.get_index(MI['c']):
                 is_new = False
+            else:
+                is_new = True
+
             quantity = inventory.loc[i,self.converted_quantity_column]
             region_from = inventory.loc[i,f"DB {MI['r']}"]
             change_type = inventory.loc[i,'Type']
 
-            if region_from in self.builder.sut.get_index(MI['r']):
-                if change_type == 'Update':
-                    if is_new:
-                        if region_from != region_to:
-                            raise ValueError(f"Self-consumption of new commodity {input_item} by activity {activity} is allowed only if coming from the region where the activity is added ({region_to})")
-                        else:                    
-                            self.slices[activity]['u']['cross'].loc[(region_from,MI['c'],input_item),(region_to,MI['a'],activity)] += quantity
-                    else:
-                        try:
-                            self.slices[activity]['u'][MI['a']][1].loc[(region_from,MI['c'],input_item),(region_to,MI['a'],activity)] += quantity
-                        except:
-                            raise ValueError("ERRORE: COMMODITY NON ANCORA DEFINITA")
+            if change_type == 'Update':
+                if region_from in self.builder.sut.get_index(MI['r']):
+                    slices['u'].loc[(region_from,MI['c'],input_item),(region_to,MI['a'],activity)] += quantity
             
-            elif region_from in self.builder.regions_maps:
-                if is_new:
-                    raise ValueError(f"Self-consumption of new commodity {input_item} by activity {activity} is allowed only if coming from the region where the activity is added ({region_to})")
-
-                if change_type == 'Update':
-                    if input_item in self.new_commodities:
-                        try:
-                            com_use = self.slices[activity]['u'][MI['c']][0].loc[(self.builder.regions_maps[region_from],sn,input_item),(region_to,sn,sn)]
-                        except:
-                            raise ValueError("ERRORE: COMMODITY NON ANCORA DEFINITA")
+                elif region_from in self.builder.regions_maps:
+                    if not is_new:
+                        com_use = self.builder.sut.u.loc[(self.builder.regions_maps[region_from],sn,input_item),(region_to,sn,sn)]                    
+                        u_share = com_use.sum(1)/com_use.sum().sum()*quantity
+                        if isinstance(u_share,pd.Series):
+                            u_share = u_share.to_frame()
+                        u_share.columns = pd.MultiIndex.from_arrays([[region_to],[MI['a']],[activity]])
+                        slices['u'].loc[u_share.index,u_share.columns] += u_share.values
                     else:
-                        com_use = self.builder.sut.u.loc[(self.builder.regions_maps[region_from],sn,input_item),(region_to,sn,sn)]
-                    
-                    u_share = com_use.sum(1)/com_use.sum().sum()*quantity
-                    if isinstance(u_share,pd.Series):
-                        u_share = u_share.to_frame()
-                    u_share.columns = pd.MultiIndex.from_arrays([[region_to],[MI['a']],[activity]])
-                    self.slices[activity]['u'][MI['a']][1].loc[u_share.index,u_share.columns] += u_share.values
+                        self.inputs_to_retry += [{"activity":activity,"region_to":region_to,"region_from":region_from,"input_item":input_item}]
+
+        return slices
+
+    def retry_commodities_inputs(
+            self,
+    ):
+        """
+        Retry to fill the commodities inputs for the activities that were not successfully filled in the first attempt.
+
+        Returns:
+            None
+        """
+
+        for i in self.inputs_to_retry:
+            activity = i['activity']
+            region_to = i['region_to']
+            region_from = i['region_from']
+            input_item = i['input_item']
+            quantity = self.builder.inventories[activity].query(f"`DB Item`=='{input_item}' & Type=='Update'")[self.converted_quantity_column].values[0]
+
+            com_use = self.matrices['u'].loc[(self.builder.regions_maps[region_from],sn,input_item),(region_to,sn,sn)]
+            u_share = com_use.sum(1)/com_use.sum().sum()*quantity
+            if isinstance(u_share,pd.Series):
+                u_share = u_share.to_frame()
+            u_share.columns = pd.MultiIndex.from_arrays([[region_to],[MI['a']],[activity]])
+            self.filled_slices['u'].loc[u_share.index,u_share.columns] += u_share.values
+
 
     def fill_fact_sats_inputs(
         self,
@@ -428,6 +425,7 @@ class Inventories:
         region_to: str,
         activity: str,
         matrix: str,
+        slices:str
     ):
         """
         Fills the fact sats inputs based on the given parameters.
@@ -452,13 +450,19 @@ class Inventories:
             change_type = inventory.loc[i, 'Type']
 
             if change_type == 'Update':
-                self.slices[activity][matrix][MI['a']][1].loc[input_item, (region_to, MI['a'], activity)] += quantity
+                slices[matrix].loc[input_item, (region_to, MI['a'], activity)] += quantity
+            if change_type == 'Percentage':
+                old_value = self.matrices[matrix].loc[input_item, (region_to, MI['a'], activity)]
+                slices[matrix].loc[input_item, (region_to, MI['a'], activity)] += old_value*(1+quantity)
+        
+        return slices
 
     def fill_market_shares(
         self,
         activity:str,
         region:str,
         cluster_region:str,
+        slices:dict
     ):
         """
         Fills the market shares for a given activity and region.
@@ -478,13 +482,16 @@ class Inventories:
         
         commodities = self.builder.master_sheet.query(f"{MI['a']}==@activity & {MI['r']}==@cluster_region")[MI['c']].values
         for i in range(len(commodities)):
-            self.slices[activity]['s']['cross'].loc[(region,MI['a'],activity),(region,MI['c'],commodities[i])] = market_shares[i]
+            slices['s'].loc[(region,MI['a'],activity),(region,MI['c'],commodities[i])] = market_shares[i]
+        
+        return slices
 
     def fill_final_demand(
-            self,
-            activity:str,
-            region:str,
-            cluster_region:str
+        self,
+        activity:str,
+        region:str,
+        cluster_region:str,
+        slices:dict
     ):
         """
         Fills the final demand for a given activity and region.
@@ -514,7 +521,9 @@ class Inventories:
         commodities = self.builder.master_sheet.query(f"{MI['a']}==@activity & {MI['r']}==@cluster_region")[MI['c']].values
 
         for i in range(len(commodities)):
-            self.slices[activity]['Y'][MI['c']][0].loc[(region,MI['c'],commodities[i]),(cons_region,MI['n'],new_cons_categories[i])] += total_outputs[i]
+            slices['Y'].loc[(region,MI['c'],commodities[i]),(cons_region,MI['n'],new_cons_categories[i])] += total_outputs[i]
+
+        return slices   
 
     def leave_empty(
             self, 
@@ -546,7 +555,7 @@ class Inventories:
         else:
             raise ValueError(f"'Leave empty' column for {activity} in the master file must be boolean or left empty, got {empty} instead")
 
-    def add_slices(self,activity):
+    def add_slices(self):
         """
         Add slices to the matrices.
 
@@ -554,33 +563,13 @@ class Inventories:
         associated with that item. For each slice, it checks if it is a row slice or a column slice.
         If it is a row slice, it concatenates the slice with the corresponding matrix along the row axis.
         If it is a column slice, it concatenates the slice with the corresponding matrix along the column axis.
-
-        Parameters:
-            None
-
-        Returns:
-            None
         """
-        for matrix in self.slices[activity]:
-            for item in self.slices[activity][matrix]:
-                if item != 'cross':
-                    for s in self.slices[activity][matrix][item]:
-                        grouped_slice = self.slices[activity][matrix][item][s].groupby(level=list(range(self.slices[activity][matrix][item][s].index.nlevels)),axis=0).mean()
-                        self.matrices[matrix] = pd.concat([self.matrices[matrix],grouped_slice],axis=s)
-
-            self.matrices[matrix].fillna(0,inplace=True)
-            if matrix in ['u','s']:
-                self.matrices[matrix] = self.matrices[matrix].groupby(level=[0,1,2],axis=0).sum()
-                self.matrices[matrix] = self.matrices[matrix].groupby(level=[0,1,2],axis=1).sum()
-            if matrix in ['v','e']:
-                self.matrices[matrix] = self.matrices[matrix].groupby(level=[0,1,2],axis=1).sum()
-            if matrix == 'Y':
-                self.matrices[matrix] = self.matrices[matrix].groupby(level=[0,1,2],axis=0).sum()
-
-        for matrix in self.slices[activity]:
-            self.matrices[matrix].fillna(0,inplace=True)
-            if matrix in ['u','s']:
-                self.matrices[matrix].loc[self.slices[activity][matrix]['cross'].index,self.slices[activity][matrix]['cross'].columns] += self.slices[activity][matrix]['cross'].values
+        
+        for matrix in _matrix_slices_map:
+            concat = _matrix_slices_map[matrix]['concat']
+            self.matrices[matrix] = pd.concat([self.matrices[matrix],self.filled_slices[matrix]],axis=concat)
+            self.matrices[matrix] = self.matrices[matrix].groupby(level=list(range(self.matrices[matrix].index.nlevels)),axis=0).sum()
+            self.matrices[matrix] = self.matrices[matrix].groupby(level=list(range(self.matrices[matrix].columns.nlevels)),axis=1).sum()
 
     def get_mario_indices(
             self
