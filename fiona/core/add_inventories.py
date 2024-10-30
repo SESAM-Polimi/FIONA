@@ -11,11 +11,11 @@ logger = setup_logger('Inventories')
 sn = slice(None)
 
 _matrix_slices_map = {
-    'u':{MI['a']:[1],MI['c']:[0]},
-    's':{MI['a']:[0],MI['c']:[1]},
-    'e':{MI['a']:[1]},
-    'v':{MI['a']:[1]},
-    'Y':{MI['c']:[0]},
+    'u':{MI['a']:1},
+    's':{MI['a']:0,MI['c']:1},
+    'e':{MI['a']:1},
+    'v':{MI['a']:1},
+    'Y':{MI['c']:0},
 }
 
 class Inventories:
@@ -68,16 +68,15 @@ class Inventories:
         self.matrices['s'] = self.matrices['z'].loc[(sn,MI['a'],sn),(sn,MI['c'],sn)]
 
         self.slices = {}
-        # create a dictionary with errors to retry
+        self.empty_slices = self.get_empty_table_slices()
+
 
         for activity in self.new_activities:
             self.slices[activity] = self.get_empty_table_slices(activity)
             logger.info(f"{logmsg['dm']} | Empty slices created for activity '{activity}'")
             
             self.fill_slices(activity)
-        
-        # retry errors
-        
+                
         new_act_indices = self.matrices['s'].loc[(sn,MI['a'],self.new_activities),:].index
         new_com_indices = self.matrices['u'].loc[(sn,MI['c'],self.new_commodities),:].index
         self.matrices['Y'] = pd.concat([self.matrices['Y'],pd.DataFrame(0, index=new_act_indices, columns=self.matrices['Y'].columns)],axis=0)
@@ -121,22 +120,23 @@ class Inventories:
 
         self.units[item] = pd.concat([self.units[item],df],axis=0)
     
-    def get_empty_table_slices(self,activity):
+    def get_empty_table_slices(self):
         """
-        Returns a dictionary containing empty table slices for each matrix and item.
+        Returns a dictionary containing empty table slices for each matrix and axis.
 
         Returns:
             dict: A dictionary containing empty table slices for each matrix and item.
                   The keys of the dictionary are the matrix names, and the values are
-                  dictionaries containing empty table slices for each item. Each item
-                  dictionary contains empty table slices for 'c', 'a', and 'cross'.
+                  dictionaries containing empty table slices for each axis. Each axis
+                  dictionary contains empty pd.DataFrames structured as empty slices according
+                  to which axis they will be then concatenated to the original matrices.
         """
         empty_slices = {}
 
         for matrix in _matrix_slices_map:
             empty_slices[matrix] = {}
-            for item in _matrix_slices_map[matrix]:
-                empty_slices[matrix][item] = {}
+            for item,axis in _matrix_slices_map[matrix].items():
+                empty_slices[matrix][axis] = {}
                 for s in _matrix_slices_map[matrix][item]:
                     new_index = self.get_slice_index(item,activity)
                     if s == 0:
@@ -189,12 +189,12 @@ class Inventories:
                 extra_index = [[] for i in range(old_indeces.nlevels)]
                 for region in self.builder.sut.get_index(MI['r']):
                     for element in self.builder.new_commodities:
-                        com_from_activity = self.builder.master_sheet.query(f"{MI['a']}==@activity")[MI['c']].values[0]
-                        if element != com_from_activity:
-                            extra_index[0] += [region]
-                            extra_index[1] += [item]
-                            extra_index[2] += [element]
-                
+                        # com_from_activity = self.builder.master_sheet.query(f"{MI['a']}==@activity")[MI['c']].values[0]
+                        # if element != com_from_activity:
+                        extra_index[0] += [region]
+                        extra_index[1] += [item]
+                        extra_index[2] += [element]
+            
                 new_indeces = pd.MultiIndex.from_arrays([
                     list(old_indeces.get_level_values(0))+extra_index[0],
                     list(old_indeces.get_level_values(1))+extra_index[1],
