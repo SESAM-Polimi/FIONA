@@ -29,5 +29,5 @@ db.read_inventories(master_file_path,check_errors=False)
 db.add_inventories('excel')
 
 # %%
-db.sut.Y
+db.sut.u
 # %%

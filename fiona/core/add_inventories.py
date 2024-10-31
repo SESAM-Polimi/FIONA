@@ -279,8 +279,8 @@ class Inventories:
                 slices = self.fill_final_demand(activity,region_to,region,slices)
             logger.info(f"{logmsg['dm']} | Slices for '{activity}' filled")
 
-            for matrix in slices:
-                self.filled_slices[matrix].update(slices[matrix])
+        for matrix in slices:
+            self.filled_slices[matrix] += slices[matrix]
 
     def reindex_matrices(
             self,
