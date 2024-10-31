@@ -8,7 +8,7 @@ from fiona.core.db_builder import DB_builder
 
 sut_path = 'conceptual test/test_sut.xlsx'
 sut_format = 'xlsx'
-sut_mode = 'flows'
+sut_mode = 'coefficients'
 master_file_path = 'conceptual test/master.xlsx'
 
 db = DB_builder(
@@ -28,4 +28,6 @@ db.read_inventories(master_file_path,check_errors=False)
 #%%
 db.add_inventories('excel')
 
+# %%
+db.sut.u
 # %%

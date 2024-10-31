@@ -71,8 +71,6 @@ class Inventories:
         logger.info(f"{logmsg['dm']} | Empty slices created'")
 
         self.filled_slices = deepcopy(empty_slices)
-        self.inputs_to_retry = []
-
         for activity in self.new_activities:
             self.fill_slices(activity)
 
@@ -80,17 +78,6 @@ class Inventories:
         self.add_slices()
         logger.info(f"{logmsg['dm']} | Slices for added to matrices")
         
-        self.filled_slices = deepcopy(empty_slices)
-        if self.inputs_to_retry != []:
-            logger.info(f"{logmsg['dm']} | Retrying to fill inputs imported from regions clusters")
-            self.filled_slices = deepcopy(empty_slices)
-            self.retry_commodities_inputs()
-            logger.info(f"{logmsg['dm']} | Inputs imported from regions clusters successfully filled")
-
-            logger.info(f"{logmsg['dm']} | Adding slices to matrices")
-            self.add_slices()
-            logger.info(f"{logmsg['dm']} | Slices for added to matrices")
-
         new_act_indices = self.matrices['s'].loc[(sn,MI['a'],self.new_activities),:].index
         new_com_indices = self.matrices['u'].loc[(sn,MI['c'],self.new_commodities),:].index
         self.matrices['Y'] = pd.concat([self.matrices['Y'],pd.DataFrame(0, index=new_act_indices, columns=self.matrices['Y'].columns)],axis=0)
@@ -131,7 +118,8 @@ class Inventories:
             else:
                 df = self.builder.master_sheet.query(f"{MI['a']}==@new_items").loc[:,[item,'FU unit']].set_index(item)
                 df.columns = ['unit']
-
+        
+        df = df.drop_duplicates()
         self.units[item] = pd.concat([self.units[item],df],axis=0)
     
     def get_empty_table_slices(self):
@@ -236,53 +224,52 @@ class Inventories:
             ValueError: If the activity is added in a region that is not in the SUT nor in the regions map.
             ValueError: If the parent region of the activity is not in the SUT.
         """
-        if self.leave_empty(activity):
-            logger.info(f"{logmsg['dm']} | '{activity}' not added to matrices because 'Leave empty' is True")
-            return
-        
+
         slices = self.get_empty_table_slices()
 
-        # get the region where to add the activity
-        region = self.builder.master_sheet.query(f"{MI['a']}==@activity")[MI['r']].values[0]
-
-        # check if the region is in the SUT or in the regions maps
-        if region in self.builder.sut.get_index(MI['r']):
-            target_regions = [region]
-        elif region not in self.builder.sut.get_index(MI['r']):
-            if region in self.builder.regions_maps:
-                target_regions = self.builder.regions_maps[region] 
-            else:
-                raise ValueError(f"Activity {activity} is added in region {region} which is not in the SUT nor in the regions map")
-
         # get the inventory for the activity
-        inventory = self.builder.inventories[activity]
+        inventories = self.builder.inventories[activity]
 
-        # in case the activity has a parent to be initialized from
-        if activity in self.parented_activities: 
-            parent_activity = self.builder.master_sheet.query(f"{MI['a']}==@activity")[f'Parent {MI["a"]}'].values[0]
+        # the same activity could be initialized in a different way in different regions (ergo: different inventories)
+        for sheet_name,inventory in inventories.items():
 
-            # copy the parent activity in the target region into the new activity inventory on u, v and e
-            for region in target_regions: 
-                slices['u'].loc[self.matrices['u'].index,(region,MI['a'],activity)] = self.matrices['u'].loc[:,(region,MI['a'],parent_activity)].values
-                slices['v'][MI['a']][1].loc[:,(region,MI['a'],activity)] = self.matrices['v'].loc[:,(region,MI['a'],parent_activity)].values
-                slices['e'][MI['a']][1].loc[:,(region,MI['a'],activity)] = self.matrices['e'].loc[:,(region,MI['a'],parent_activity)].values
+            if self.leave_empty(sheet_name):
+                logger.info(f"{logmsg['dm']} | 'Inventory {sheet_name}' for activity {activity} not added to matrices because 'Leave empty' is True")
+                return
+            
+            # get the region where to add the activity
+            region = self.builder.master_sheet.query(f"`Sheet name`==@sheet_name")[MI['r']].values[0]
+
+            # check if the region is in the SUT or in the regions maps
+            if region in self.builder.sut.get_index(MI['r']):
+                target_regions = [region]
+            elif region not in self.builder.sut.get_index(MI['r']):
+                if region in self.builder.regions_maps:
+                    target_regions = self.builder.regions_maps[region] 
+                else:
+                    raise ValueError(f"Activity {activity} is added in region {region} which is not in the SUT nor in the regions map")
+
+            # in case the activity has a parent to be initialized from
+            parent_activity = self.builder.master_sheet.query(f"`Sheet name`==@sheet_name")[f'Parent {MI["a"]}'].values[0]
+            if pd.isna(parent_activity) == False: 
+                slices = self.copy_from_parent(activity,parent_activity,target_regions,slices,inventory)
                 logger.info(f"{logmsg['dm']} | Activity '{activity}' initialized equal to parent activity '{parent_activity}' in region '{region}'")
 
-        logger.info(f"{logmsg['dm']} | Converting units of inventory of activity '{activity}' consistently with the units of the SUT database")        
-        inventory = self.make_units_consistent_to_database(inventory) 
-        logger.info(f"{logmsg['dm']} | Units converted for activity '{activity}'")
-        
-        logger.info(f"{logmsg['dm']} | Filling slices for '{activity}'")
-        for region_to in target_regions:
-            slices = self.fill_commodities_inputs(inventory,region_to,activity,slices)
-            slices = self.fill_fact_sats_inputs(inventory,region_to,activity,'v',slices)
-            slices = self.fill_fact_sats_inputs(inventory,region_to,activity,'e',slices)
-            slices = self.fill_market_shares(activity,region_to,region,slices)
-            slices = self.fill_final_demand(activity,region_to,region,slices)
-        logger.info(f"{logmsg['dm']} | Slices for '{activity}' filled")
+            logger.info(f"{logmsg['dm']} | Converting units of inventory of activity '{activity}' consistently with the units of the SUT database")        
+            inventory = self.make_units_consistent_to_database(inventory) 
+            logger.info(f"{logmsg['dm']} | Units converted for activity '{activity}'")
+            
+            logger.info(f"{logmsg['dm']} | Filling slices for '{activity}'")
+            for region_to in target_regions:
+                slices = self.fill_commodities_inputs(inventory,region_to,activity,slices)
+                slices = self.fill_fact_sats_inputs(inventory,region_to,activity,'v',slices)
+                slices = self.fill_fact_sats_inputs(inventory,region_to,activity,'e',slices)
+                slices = self.fill_market_shares(activity,region_to,region,slices)
+                slices = self.fill_final_demand(activity,region_to,region,slices)
+            logger.info(f"{logmsg['dm']} | Slices for '{activity}' filled")
 
-        for matrix in slices:
-            self.filled_slices[matrix] += slices[matrix]
+            for matrix in slices:
+                self.filled_slices[matrix].update(slices[matrix])
 
     def reindex_matrices(
             self,
@@ -344,13 +331,63 @@ class Inventories:
 
         return inventory
 
+    def copy_from_parent(
+        self,
+        activity:str,
+        parent_activity:str,
+        target_regions:list,
+        slices:dict,
+        inventory:pd.DataFrame
+    )->dict:
+        """
+        Copy the parent activity in the target region into the new activity inventory on u, v and e.
+
+        Args:
+            activity (str): activity to be filled starting from the parent activity.
+            parent_activity (str): parent activity to be copied.
+            target_regions (list): list of regions where the activity must be filled.
+            slices (dict): dictionary containing the slices to be filled.
+            inventory (pd.DataFrame): inventory of the activity containing the information to be updated later, so those of the parent activity must be nullified.
+
+        Returns:
+            dict: dictionary containing the updated slices.
+        """
+
+        # copy the parent activity in the target region into the new activity inventory on u, v and e
+        for region in target_regions: 
+            slices['u'].loc[self.matrices['u'].index,(region,MI['a'],activity)] = self.matrices['u'].loc[:,(region,MI['a'],parent_activity)].values
+            slices['v'].loc[:,(region,MI['a'],activity)] = self.matrices['v'].loc[:,(region,MI['a'],parent_activity)].values
+            slices['e'].loc[:,(region,MI['a'],activity)] = self.matrices['e'].loc[:,(region,MI['a'],parent_activity)].values
+
+            # nullify the values that must be updated according to the activity's inventory
+            commodities_to_nullify = [(c,r) for c,r in zip(inventory.query(f"Item=='{MI['c']}' & Type=='Update'")['DB Item'].values,inventory.query(f"Item=='{MI['c']}' & Type=='Update'")['DB Region'].values)]
+            satellites_to_nullify = inventory.query(f"Item=='{MI['k']}' & Type=='Update'")['DB Item'].values
+            factors_to_nullify = inventory.query(f"Item=='{MI['f']}' & Type=='Update'")['DB Item'].values
+
+            for tup in commodities_to_nullify:
+                c = tup[0]
+                r = tup[1]
+                if r in self.builder.sut.get_index(MI['r']):
+                    slices['u'].loc[(r,MI['c'],c),(region,MI['a'],activity)] = 0
+                elif r in self.builder.regions_maps:
+                    slices['u'].loc[(self.builder.regions_maps[r],MI['c'],c),(region,MI['a'],activity)] = 0
+                
+            for k in satellites_to_nullify:
+                slices['e'].loc[k,(region,MI['a'],activity)] = 0
+            
+            for f in factors_to_nullify:
+                slices['v'].loc[f,(region,MI['a'],activity)] = 0
+        
+        return slices
+
+
     def fill_commodities_inputs(
         self,
         full_inventory:pd.DataFrame,
         region_to:str,
         activity:str,
         slices:dict,
-    ):
+    )->dict:
         """
         Fills the commodities inputs for a given region and activity.
 
@@ -358,9 +395,10 @@ class Inventories:
             full_inventory (pandas.DataFrame): The full inventory data.
             region_to (str): The target region.
             activity (str): The target activity.
+            slices (dict): The slices to fill.
 
         Returns:
-            None
+            dict: The updated slices.
         """
         inventory = full_inventory.query(f"Item=='{MI['c']}'") 
         
@@ -390,34 +428,9 @@ class Inventories:
                         u_share.columns = pd.MultiIndex.from_arrays([[region_to],[MI['a']],[activity]])
                         slices['u'].loc[u_share.index,u_share.columns] += u_share.values
                     else:
-                        self.inputs_to_retry += [{"activity":activity,"region_to":region_to,"region_from":region_from,"input_item":input_item}]
+                        slices['u'].loc[(region_to,MI['c'],input_item),(region_to,MI['a'],activity)] += quantity
 
         return slices
-
-    def retry_commodities_inputs(
-            self,
-    ):
-        """
-        Retry to fill the commodities inputs for the activities that were not successfully filled in the first attempt.
-
-        Returns:
-            None
-        """
-
-        for i in self.inputs_to_retry:
-            activity = i['activity']
-            region_to = i['region_to']
-            region_from = i['region_from']
-            input_item = i['input_item']
-            quantity = self.builder.inventories[activity].query(f"`DB Item`=='{input_item}' & Type=='Update'")[self.converted_quantity_column].values[0]
-
-            com_use = self.matrices['u'].loc[(self.builder.regions_maps[region_from],sn,input_item),(region_to,sn,sn)]
-            u_share = com_use.sum(1)/com_use.sum().sum()*quantity
-            if isinstance(u_share,pd.Series):
-                u_share = u_share.to_frame()
-            u_share.columns = pd.MultiIndex.from_arrays([[region_to],[MI['a']],[activity]])
-            self.filled_slices['u'].loc[u_share.index,u_share.columns] += u_share.values
-
 
     def fill_fact_sats_inputs(
         self,
@@ -426,7 +439,7 @@ class Inventories:
         activity: str,
         matrix: str,
         slices:str
-    ):
+    )->dict:
         """
         Fills the fact sats inputs based on the given parameters.
 
@@ -435,9 +448,10 @@ class Inventories:
             region_to (str): The region to fill the fact sats inputs for.
             activity (str): The activity to fill the fact sats inputs for.
             matrix (str): The matrix type ('v' or 'e').
+            slices (dict): The slices to fill.
 
         Returns:
-            None
+            dict: The updated slices.
         """
         if matrix == 'v':
             inventory = full_inventory.query(f"Item=='{MI['f']}'")
@@ -452,8 +466,12 @@ class Inventories:
             if change_type == 'Update':
                 slices[matrix].loc[input_item, (region_to, MI['a'], activity)] += quantity
             if change_type == 'Percentage':
-                old_value = self.matrices[matrix].loc[input_item, (region_to, MI['a'], activity)]
-                slices[matrix].loc[input_item, (region_to, MI['a'], activity)] += old_value*(1+quantity)
+                if activity in self.parented_activities:
+                    parent_activity = self.builder.master_sheet.query(f"{MI['a']}==@activity")[f'Parent {MI["a"]}'].values[0]
+                    old_value = self.matrices[matrix].loc[input_item, (region_to, MI['a'], parent_activity)]
+                    slices[matrix].loc[input_item, (region_to, MI['a'], activity)] += old_value*(1+quantity)
+                else:
+                    raise ValueError(f"It's not possible to apply a percentage change to activity {activity} because it has no parent activity")
         
         return slices
 
@@ -463,16 +481,18 @@ class Inventories:
         region:str,
         cluster_region:str,
         slices:dict
-    ):
+    )->dict:
         """
         Fills the market shares for a given activity and region.
 
         Parameters:
         - activity (str): The activity for which market shares need to be filled.
         - region (str): The region for which market shares need to be filled.
+        - cluster_region (str): The cluster region for which market shares need to be filled.
+        - slices (dict): The slices to fill.
 
         Returns:
-        None
+        - dict: The updated slices.
         """
 
         market_shares = self.builder.master_sheet.query(f"{MI['a']}==@activity & {MI['r']}==@cluster_region")['Market share'].values
@@ -492,16 +512,18 @@ class Inventories:
         region:str,
         cluster_region:str,
         slices:dict
-    ):
+    )->dict:
         """
         Fills the final demand for a given activity and region.
 
         Parameters:
             activity (str): The activity for which the final demand needs to be filled.
             region (str): The region for which the final demand needs to be filled.
+            cluster_region (str): The cluster region for which the final demand needs to be filled.
+            slices (dict): The slices to fill.
 
         Returns:
-            None
+            dict: The updated slices.
         """
         total_outputs = self.builder.master_sheet.query(f"{MI['a']}==@activity & {MI['r']}==@cluster_region")['Total output'].values
         for i in range(len(total_outputs)):
@@ -527,7 +549,7 @@ class Inventories:
 
     def leave_empty(
             self, 
-            activity:str
+            sheet_name:str
     ):
         """
         Check if the 'Leave empty' column for a given activity in the master file is True or False.
@@ -541,7 +563,7 @@ class Inventories:
         Raises:
         - ValueError: If the 'Leave empty' column is not a boolean or left empty.
         """
-        empty = self.builder.master_sheet.query(f"{MI['a']}==@activity")['Leave empty'].values[0]
+        empty = self.builder.master_sheet.query(f"`Sheet name`==@sheet_name")['Leave empty'].values[0]
         if empty == True or empty == False:
             return empty
 
@@ -553,7 +575,7 @@ class Inventories:
             if pd.isna(empty):
                 return False
         else:
-            raise ValueError(f"'Leave empty' column for {activity} in the master file must be boolean or left empty, got {empty} instead")
+            raise ValueError(f"'Leave empty' column for inventory {sheet_name} in the master file must be boolean or left empty, got {empty} instead")
 
     def add_slices(self):
         """
