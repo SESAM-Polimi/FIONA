@@ -168,7 +168,15 @@ class Inventories:
                     empty_index[0] += [region]
                     empty_index[1] += [item_row]
                     empty_index[2] += [item]
-            new_index = pd.MultiIndex.from_arrays(empty_index)
+            
+            if matrix == 'Y':   # it is possible that a new activity produces an old commodity and an extra final demand could come from that. Therefore, Y slice should have all indices 
+                new_index = pd.MultiIndex.from_arrays([
+                    self.matrices[matrix].index.get_level_values(0).tolist() + empty_index[0],
+                    self.matrices[matrix].index.get_level_values(1).tolist() + empty_index[1],
+                    self.matrices[matrix].index.get_level_values(2).tolist() + empty_index[2],
+                ])
+            else:
+                new_index = pd.MultiIndex.from_arrays(empty_index)
 
             empty_extra_columns = [[],[],[]] # will always be 3 levels
             items_to_add_on_cols = self.builder.new_activities if item_col == MI['a'] else self.builder.new_commodities
@@ -182,7 +190,9 @@ class Inventories:
                 self.matrices[matrix].columns.get_level_values(1).tolist() + empty_extra_columns[1],
                 self.matrices[matrix].columns.get_level_values(2).tolist() + empty_extra_columns[2],
             ])
-
+            if matrix == 'Y':
+                new_columns = self.matrices[matrix].columns
+                
         if concat == 1:
             if matrix in ['v','e']:
                 new_index = self.matrices[matrix].index
