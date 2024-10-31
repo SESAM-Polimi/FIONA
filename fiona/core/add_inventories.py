@@ -109,6 +109,7 @@ class Inventories:
             new_items = self.new_commodities
             df = self.builder.master_sheet.query(f"{MI['c']}==@new_items").loc[:,[item,'FU unit']].set_index(item)
             df.columns = ['unit']
+            df = df.reset_index().drop_duplicates().set_index(item)
 
         if item == MI['a']:
             new_items = self.new_activities
@@ -118,8 +119,8 @@ class Inventories:
             else:
                 df = self.builder.master_sheet.query(f"{MI['a']}==@new_items").loc[:,[item,'FU unit']].set_index(item)
                 df.columns = ['unit']
-        
-        df = df.drop_duplicates()
+                df = df.drop_duplicates()
+                
         self.units[item] = pd.concat([self.units[item],df],axis=0)
     
     def get_empty_table_slices(self):
