@@ -24,13 +24,21 @@ def read_fiona_inventory_templates(instance,path,check):
             del inventories[i] # drop all sheets that don't contain inventory data
         elif instance.master_sheet.query(f"`Sheet name`==@i")['Leave empty'].values[0] == True:
             del inventories[i] # drop all inventories to be left empty
-        else:
-            inventories[instance.master_sheet.query(f'`Sheet name` == "{i}"')[MI['a']].values[0]] = inventories.pop(i) # rename key from sheet to activity name   
+        # else:
+        #     inventories[instance.master_sheet.query(f'`Sheet name` == "{i}"')[MI['a']].values[0]] = inventories.pop(i) # rename key from sheet to activity name   
 
     if check:
         check_for_errors_in_inventories(instance,inventories,instance.regions_maps)
 
-    return inventories
+    inventories_by_act = {}
+    for k,v in inventories.items():
+        activity = instance.master_sheet.query(f'`Sheet name` == "{k}"')[MI['a']].values[0]
+        if activity in inventories_by_act.keys():
+            inventories_by_act[activity][k] = v
+        else:
+            inventories_by_act[activity] = {k:v}
+
+    return inventories_by_act
 
 
 def check_for_errors_in_master_sheet(instance,master_sheet,regions_maps):
